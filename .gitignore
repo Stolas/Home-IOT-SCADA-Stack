@@ -1,0 +1,8 @@
+# Secret
+secrets.env
+
+# Vim temporary files
+*~
+*.swp
+*.swo
+*.swn
