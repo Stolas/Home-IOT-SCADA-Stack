@@ -1,40 +1,35 @@
-Home IoT SCADA Stack for openSUSE MicroOS
+# Home IoT SCADA Stack for openSUSE MicroOS
 
 A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE MicroOS host.
 
-Features
+## Features
 
-Host OS: Optimized for openSUSE MicroOS (or other transactional OS) for enhanced stability and rollback capability.
+* Host OS: Optimized for openSUSE MicroOS (or other transactional OS) for enhanced stability and rollback capability.
+* Container Runtime: Uses Podman for managing containers, networks, and persistent volumes.
+* Core Components: Integrates MQTT Broker (Mosquitto), Time Series Database (InfluxDB), Visualization (Grafana), Automation (Node-RED), NVR (Frigate), and Zigbee Gateway (Zigbee2MQTT).
+* Security: Uses create_secrets.sh to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
+* External Storage: Includes logic to mount an SMB/CIFS share for Frigate recordings on the host machine.
+* Resilience: The startup.sh script continues running even if individual service starts fail, providing a complete status report.
 
-Container Runtime: Uses Podman for managing containers, networks, and persistent volumes.
-
-Core Components: Integrates MQTT Broker (Mosquitto), Time Series Database (InfluxDB), Visualization (Grafana), Automation (Node-RED), NVR (Frigate), and Zigbee Gateway (Zigbee2MQTT).
-
-Security: Uses create_secrets.sh to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
-
-External Storage: Includes logic to mount an SMB/CIFS share for Frigate recordings on the host machine.
-
-Resilience: The startup.sh script continues running even if individual service starts fail, providing a complete status report.
-
-Getting Started
+## Getting Started
 
 Follow these steps to set up and run the entire stack.
 
-1. Prerequisites (openSUSE MicroOS)
+### 1. Prerequisites (openSUSE MicroOS)
 
 You must have the following installed on your host machine:
 
-Podman: Installed by default on MicroOS.
+* Podman: Installed by default on MicroOS.
+* cifs-utils: Required for mounting the SMB share. Use transactional-update to install this package permanently:
 
-cifs-utils: Required for mounting the SMB share. Use transactional-update to install this package permanently:
-
+```bash
 sudo transactional-update pkg install cifs-utils
 sudo reboot
-
+```
 
 sudo privileges: Required for mounting the SMB share.
 
-2. Configure Environment Variables
+### 2. Configure Environment Variables
 
 The stack uses a single .env file for all configurations.
 
@@ -42,30 +37,30 @@ Review the Example: Examine secrets.env-example to understand the required varia
 
 Generate Secrets: Run the create_secrets.sh script. This will create your secure secrets.env file.
 
+```bash
 chmod +x create_secrets.sh
 ./create_secrets.sh
-
+```
 
 Manual Configuration (CRITICAL):
 
-Edit the newly created secrets.env file.
-
-Crucially, update ZIGBEE_DEVICE_PATH with the path to your Zigbee adapter (e.g., /dev/ttyACM0 or /dev/ttyUSB0).
-
+Edit the newly created `secrets.env` file.
+Crucially, update ZIGBEE_DEVICE_PATH with the path to your Zigbee adapter (e.g., `/dev/ttyACM0` or `/dev/ttyUSB0`).
 Update the PODMAN_SOCKET_PATH variable for Node-RED integration. On modern Podman/MicroOS systems, this is typically:
 
+```bash
 PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
-
+```
 
 Update all other non-secret, site-specific variables (e.g., FRIGATE_PORT, SMB_SERVER, TZ).
 
-3. Configure Frigate
+### 3. Configure Frigate
 
 The Frigate container uses a separate configuration file.
 
 Edit the frigate_config.yml file to define your cameras and settings.
 
-4. Run the Stack
+### 4. Run the Stack
 
 The startup.sh script manages the entire lifecycle.
 
@@ -73,9 +68,10 @@ Default Start / Setup
 
 This stops any existing containers, unmounts the SMB share, sets up the Podman network and volumes, mounts the SMB share, and starts all services.
 
+```bash
 chmod +x startup.sh
 ./startup.sh setup  # or simply ./startup.sh
-
+```
 
 Breakdown (Stop and Remove Containers)
 
@@ -88,17 +84,18 @@ Start a Single Service
 
 To troubleshoot or manually start a specific service:
 
+```bash
 ./startup.sh start <service_name>
 # Example: ./startup.sh start zigbee2mqtt
-
+```
 
 Available service names: mosquitto, influxdb, zigbee2mqtt, frigate, grafana, nodered.
 
-Adding New Services (Example: CODESYS Gateway)
+## Adding New Services (Example: CODESYS Gateway)
 
 To extend the stack with a new service, such as the CODESYS Gateway, you need to update two sections in the startup.sh script.
 
-Step 1: Update Service Definitions
+### Step 1: Update Service Definitions
 
 Edit startup.sh and add the new service name to the arrays.
 
@@ -118,7 +115,7 @@ Add to Service List: Add the name to the list of all services to ensure it is ma
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered codesysgateway)
 
 
-Step 2: Run the Setup
+### Step 2: Run the Setup
 
 After saving startup.sh, run the full setup script again. It will automatically stop existing containers, check volumes, and start the new codesysgateway container along with the others.
 
