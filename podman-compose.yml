@@ -1,0 +1,150 @@
+# -----------------------------------------------------------------------------
+# Podman Compose for IoT/SCADA/Dashboard System on beelzebub (OpenSUSE Micro)
+#
+# This file defines the core services using variables from the secured secrets.yml file.
+# -----------------------------------------------------------------------------
+version: "3.9"
+
+# Define persistent storage volumes
+volumes:
+  mosquitto_data:
+  frigate_data:
+  nodered_data:
+  z2m_data:
+  grafana_data:
+  influxdb_data: # New volume for InfluxDB
+
+# Define a dedicated internal network for secure communication
+networks:
+  iot_net:
+    driver: bridge
+
+services:
+
+  # 1. MQTT Broker (Mosquitto) - The central messaging hub
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    restart: unless-stopped
+    networks:
+      - iot_net
+    ports:
+      - "1883:1883" # Standard MQTT port
+      - "9001:9001" # WebSockets
+    volumes:
+      - mosquitto_data:/mosquitto/data
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  # 2. Zigbee2MQTT (z2m) - Manages the Zigbee network
+  zigbee2mqtt:
+    image: koenkk/zigbee2mqtt:latest
+    container_name: zigbee2mqtt
+    restart: unless-stopped
+    networks:
+      - iot_net
+    ports:
+      - "8080:8080" # z2m Web UI
+    environment:
+      - MQTT_SERVER=mqtt://mosquitto
+      - MQTT_USER=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+      - TZ=${TZ}
+    volumes:
+      - z2m_data:/app/data
+      # Maps the physical USB adapter into the container
+      - type: bind
+        source: ${ZIGBEE_DEVICE_PATH}
+        target: /dev/zigbee
+    devices:
+      # Exposes the Zigbee device to the container
+      - ${ZIGBEE_DEVICE_PATH}:/dev/zigbee
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+
+  # 3. Frigate - NVR and Object Detection
+  frigate:
+    image: ghcr.io/blakeblackshear/frigate:stable
+    container_name: frigate
+    restart: unless-stopped
+    networks:
+      - iot_net
+    privileged: true # Required for hardware acceleration access and FFmpeg
+    environment:
+      - TZ=${TZ}
+    ports:
+      - "${FRIGATE_PORT}:5000/tcp"
+      - "${FRIGATE_RTSP_PORT}:8554/tcp"
+      - "1935:1935"
+    volumes:
+      - type: bind
+        source: ${FRIGATE_RECORDINGS_HOST_PATH}
+        target: /media/frigate
+      - ./frigate_config.yml:/config/config.yml:ro
+      - /etc/localtime:/etc/localtime:ro
+      # Uncomment one of the following lines for hardware acceleration if available
+      # - /dev/dri:/dev/dri:rwm    # For Intel iGPU (VAAPI/QSV)
+    shm_size: "256m"
+
+  # 4. InfluxDB - Time-Series Database
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    restart: unless-stopped
+    networks:
+      - iot_net
+    ports:
+      - "8086:8086" # InfluxDB UI/API
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    environment:
+      # Initial setup variables for InfluxDB 2.x
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_ADMIN_USER}
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD}
+      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
+      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_ADMIN_TOKEN}
+      - TZ=${TZ}
+
+  # 5. Grafana - Dashboarding and Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    restart: unless-stopped
+    networks:
+      - iot_net
+    ports:
+      - "3000:3000" # Grafana UI
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - influxdb # Ensure DB is running when Grafana starts
+
+  # 6. Node-RED - SCADA Flows, Logic, and Container Monitoring Dashboard
+  nodered:
+    image: nodered/node-red:latest
+    container_name: nodered
+    restart: unless-stopped
+    networks:
+      - iot_net
+    ports:
+      - "${NODERED_PORT}:1880" # Node-RED UI
+    environment:
+      - TZ=${TZ}
+      - DOCKER_HOST=unix:///var/run/docker.sock # Instructs Docker-compatible tools where to find the socket
+    volumes:
+      # Persistent storage for flows and installed modules (plugins)
+      - nodered_data:/data
+      # Mount the Podman Socket for container status monitoring
+      - type: bind
+        source: ${PODMAN_SOCKET_PATH}
+        target: /var/run/docker.sock
+    # Security option required for accessing the host socket on many Podman setups
+    security_opt:
+      - label=disable
+    user: root # Often required for /data file ownership and socket access
