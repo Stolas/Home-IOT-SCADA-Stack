@@ -37,6 +37,7 @@ SMB_SERVER=$(read_var SMB_SERVER)
 SMB_SHARE=$(read_var SMB_SHARE)
 SMB_USER=$(read_var SMB_USER)
 SMB_PASS=$(read_var SMB_PASS)
+CURRENT_UID=$(id -u) # Get the current user's UID for the mount option
 
 # --- 2/5: Mount SMB Share for Frigate Recordings ---
 echo ""
@@ -45,8 +46,7 @@ echo "[1/4] Checking and ensuring SMB share is mounted..."
 # Check if the mount point directory exists, and create it if necessary
 if [ ! -d "${FRIGATE_RECORDINGS_HOST_PATH}" ]; then
     echo "Creating mount point directory: ${FRIGATE_RECORDINGS_HOST_PATH}"
-    # NOTE: This will prompt for sudo password if not configured for NOPASSWD
-    sudo mkdir -p "${FRIGATE_RECORDINGS_HOST_PATH}"
+    mkdir -p "${FRIGATE_RECORDINGS_HOST_PATH}" || { echo "ERROR: Could not create mount point. Check user permissions."; exit 1; }
 fi
 
 # Check if the SMB share is already mounted at the target path
@@ -59,7 +59,7 @@ else
     sudo mount -t cifs \
         "//${SMB_SERVER}/${SMB_SHARE}" \
         "${FRIGATE_RECORDINGS_HOST_PATH}" \
-        -o username=${SMB_USER},password=${SMB_PASS},vers=3.0,iocharset=utf8
+        -o username=${SMB_USER},password=${SMB_PASS},vers=3.0,iocharset=utf8,rw,uid=${CURRENT_UID}
     
     # Check the exit status of the mount command
     if [ $? -eq 0 ]; then
