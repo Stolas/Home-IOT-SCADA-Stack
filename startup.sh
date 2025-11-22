@@ -11,7 +11,7 @@
 set -e # Exit immediately if a command exits with a non-zero status.
 
 COMPOSE_FILE="podman-compose.yml"
-ENV_FILE="secrets.yml" # Your secured environment variables file
+ENV_FILE="secrets.env"
 
 echo "--- IoT SCADA Stack Maintenance and Reload Script ---"
 echo "Targeting compose file: ${COMPOSE_FILE}"
