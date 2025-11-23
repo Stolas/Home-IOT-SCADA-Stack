@@ -134,7 +134,7 @@ This will start all configured services based on your first-run choices.
 
 All containers are configured with the `--restart unless-stopped` policy. This means:
 * Containers will automatically restart if they crash or exit unexpectedly
-* Containers will automatically start when the system reboots (as long as Podman is running)
+* Containers will automatically start when the system reboots (as long as the Podman service/socket is enabled)
 * Containers will NOT restart if you manually stop them with `podman stop` or `./startup.sh breakdown`
 
 To enable Podman to start containers at boot, ensure the Podman service is enabled. On most systems, this is automatic, but you can verify with:
