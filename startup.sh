@@ -26,6 +26,7 @@ VOLUME_LIST=(
     "grafana_data"
     "influxdb_data"
     "nginx_cache"
+    "doubletake_data"
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
@@ -73,6 +74,7 @@ FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME)
 NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
 ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
 COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
+DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
 
 
 # ----------------------------------------------------------------------
@@ -184,6 +186,20 @@ NGINX_EOF
             proxy_set_header X-Forwarded-Proto \$scheme;
         }
     }
+    
+    # Double-Take (Facial Recognition for Frigate)
+    server {
+        listen 80;
+        server_name ${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://doubletake:3000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
 NGINX_EOF
     fi
     
@@ -219,6 +235,7 @@ NGINX_EOF
     fi
     if [ "$stack_type" == "nvr_only" ] || [ "$stack_type" == "iot_nvr" ]; then
         services_html+="<li><a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\">Frigate NVR</a></li>"
+        services_html+="<li><a href=\"http://${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}\">Double-Take</a></li>"
     fi
     services_html+="<li><a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\">openSUSE Cockpit</a></li>"
     
@@ -368,6 +385,7 @@ check_first_run() {
             NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
             ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
             COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
+            DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
         fi
     fi
 }
@@ -426,7 +444,7 @@ mount_smb_share() {
 # --- Breakdown function: Stop and Remove all containers (KEEP volumes) ---
 breakdown_containers_only() {
     echo "Stopping and removing containers..."
-    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx")
+    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake")
     
     for name in "${CONTAINER_NAMES[@]}"; do
         if podman ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
@@ -478,7 +496,8 @@ SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --n
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
 SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 -v ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx)
+SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
 
 # --- Manual Start Function ---
 start_manual_service() {
@@ -494,7 +513,13 @@ start_manual_service() {
             exit 1
         fi
         
-        if [ "$SERVICE_NAME" != "frigate" ] && [ "$stack_type" == "nvr_only" ]; then
+        if [ "$SERVICE_NAME" == "doubletake" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "ERROR: Double-Take is not enabled in your configuration (IoT/SCADA only mode)."
+            echo "To enable Double-Take, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
+            exit 1
+        fi
+        
+        if [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "ERROR: ${SERVICE_NAME} is not enabled in your configuration (NVR only mode)."
             echo "To enable IoT/SCADA services, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
             exit 1
@@ -575,8 +600,14 @@ setup_system() {
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
         fi
-        # Skip IoT services if stack type is nvr_only
-        if [ "$SERVICE" != "frigate" ] && [ "$stack_type" == "nvr_only" ]; then
+        # Skip Double-Take if stack type is iot_only
+        if [ "$SERVICE" == "doubletake" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "Skipping Double-Take (NVR not enabled in configuration)"
+            SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
+            continue
+        fi
+        # Skip IoT services if stack type is nvr_only (but keep frigate and doubletake)
+        if [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "Skipping $SERVICE (IoT/SCADA not enabled in configuration)"
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
