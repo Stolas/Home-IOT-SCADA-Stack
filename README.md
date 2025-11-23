@@ -203,42 +203,77 @@ If you want to change between IoT/SCADA only and IoT/SCADA + NVR modes:
 
 ## Adding New Services (Example: CODESYS Gateway)
 
-To extend the stack with a new service, such as the **CODESYS Gateway**, you need to update two sections in the `startup.sh` script.
+To extend the stack with a new service, such as the **CODESYS Gateway**, you need to update the `startup.sh` script. This example shows how to add any additional service to the stack.
 
-### Step 1: Update Service Definitions
+### Step 1: Update Service Definitions in startup.sh
 
-Edit `startup.sh` and add the new service name to the arrays.
+Open `startup.sh` and locate the service definitions section (around line 467-481).
 
-**Add to Service Status/Commands:** Define the `codesysgateway` container command in the `SERVICE_CMDS` map.
+**Add the Service Command:**
 
-**CODESYS Gateway Example:** Assumes the standard port 12110 for the gateway.
+Add your service to the `SERVICE_CMDS` associative array. Each service needs a unique name and a complete podman run command.
 
 ```bash
-# (Inside startup.sh, near line 240)
-# Add the CODESYS Gateway command to the map:
+# Add after line 480, before SERVICE_NAMES
 SERVICE_CMDS[codesysgateway]="podman run -d --name codesysgateway --restart unless-stopped --network ${NETWORK_NAME} -p 12110:12110/udp -p 12111:12111/tcp docker.io/codesys/codesyscontrol-gateway-x64:latest"
 ```
 
+**Add to Service List:**
 
-**Add to Service List:** Add the name to the list of all services to ensure it is managed by the script.
-
-```bash
-# (Inside startup.sh, near line 250)
-# Add 'codesysgateway' to the SERVICE_NAMES array:
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered codesysgateway)
-```
-
-
-### Step 2: Run the Setup
-
-After saving startup.sh, run the full setup script again. It will automatically stop existing containers, check volumes, and start the new codesysgateway container along with the others.
+Add the service name to the `SERVICE_NAMES` array (line 481):
 
 ```bash
-./startup.sh setup
+# Update this line:
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx codesysgateway)
 ```
 
+**Important Notes:**
+- Custom services like CODESYS Gateway will always start regardless of stack configuration (IoT/SCADA/NVR mode)
+- If you want the service to be conditional based on stack type, you'll need to modify the service startup logic in the `setup_system()` function
+- Make sure to use `${NETWORK_NAME}` to connect the service to the same Podman network as other services
 
-The CODESYS Gateway container will now be started and managed by the startup.sh script, listening on the specified ports.
+### Step 2: (Optional) Add to Breakdown Function
+
+If you want the service to be properly cleaned up when running `./startup.sh breakdown`, add it to the `CONTAINER_NAMES` array in the `breakdown_containers_only()` function (around line 423):
+
+```bash
+CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "codesysgateway")
+```
+
+### Step 3: (Optional) Configure Nginx Proxy
+
+If you want hostname-based access to your service via the nginx reverse proxy, you'll need to:
+
+1. Add a hostname variable to `secrets.env`:
+   ```bash
+   CODESYS_HOSTNAME=codesys
+   ```
+
+2. Read the variable in startup.sh (around line 69):
+   ```bash
+   CODESYS_HOSTNAME=$(read_var CODESYS_HOSTNAME)
+   ```
+
+3. Add a server block to the `generate_nginx_config()` function (around line 203) to proxy requests to your service.
+
+### Step 4: Run the Setup
+
+After saving your changes to `startup.sh`, run the setup script:
+
+```bash
+./startup.sh
+```
+
+The script will automatically stop existing containers and start all services including your new CODESYS Gateway container.
+
+**Verify the Service:**
+
+Check that the service is running:
+
+```bash
+podman ps | grep codesysgateway
+podman logs codesysgateway
+```
 
 ## Components and Access Points
 
@@ -253,9 +288,10 @@ The CODESYS Gateway container will now be started and managed by the startup.sh 
 | **Mosquitto** | MQTT Broker | Port 1883 (Internal/External) | IoT/SCADA modes only |
 | **InfluxDB** | Time-Series Database | Port 8086 (Internal/External) | IoT/SCADA modes only |
 
-**Note:** Cockpit access via nginx requires Cockpit to be installed and running on the host. Install with:
+**Note:** Cockpit is installed by default on openSUSE MicroOS. If for any reason it is not installed or running, you can install and enable it with:
 ```bash
 sudo transactional-update pkg install cockpit
+sudo reboot
 sudo systemctl enable --now cockpit.socket
 ```
 
