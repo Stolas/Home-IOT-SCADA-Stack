@@ -4,7 +4,7 @@
 #
 # This script helps diagnose and fix SELinux context and permission issues
 # with nginx/nginx.conf when running Podman in rootless mode on systems with
-# SELinux enabled (e.g., MicroSUSE Leap, openSUSE, Fedora, RHEL).
+# SELinux enabled (e.g., openSUSE Leap, openSUSE MicroOS, Fedora, RHEL).
 #
 # USAGE:
 #   chmod +x fix-nginx-selinux.sh

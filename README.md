@@ -311,7 +311,7 @@ podman logs <service_name>
 
 * **Zigbee Adapter:** If zigbee2mqtt fails, ensure the `ZIGBEE_DEVICE_PATH` is correct and that the host user has the necessary permissions.
 
-* **nginx Permission Denied with SELinux (Podman Rootless):** On systems with SELinux enabled (e.g., openSUSE MicroOS, MicroSUSE Leap, Fedora, RHEL), you may encounter an error when the nginx container tries to read its configuration file:
+* **nginx Permission Denied with SELinux (Podman Rootless):** On systems with SELinux enabled (e.g., openSUSE MicroOS, openSUSE Leap, Fedora, RHEL), you may encounter an error when the nginx container tries to read its configuration file:
 
 ```
 nginx: [emerg] open() "/etc/nginx/nginx.conf" failed (13: Permission denied)
