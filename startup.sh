@@ -124,9 +124,10 @@ first_run_configuration() {
     echo "Please choose your stack configuration:"
     echo ""
     echo "  1) IoT/SCADA Stack only (Mosquitto, InfluxDB, Grafana, Node-RED, Zigbee2MQTT)"
-    echo "  2) IoT/SCADA Stack + NVR (includes Frigate for camera recording)"
+    echo "  2) NVR only (Frigate for camera recording)"
+    echo "  3) Both IoT/SCADA Stack + NVR (All services)"
     echo ""
-    echo -n "Enter your choice (1 or 2): "
+    echo -n "Enter your choice (1, 2, or 3): "
     read -r choice
     
     case "$choice" in
@@ -137,13 +138,19 @@ first_run_configuration() {
             ;;
         2)
             echo ""
-            echo "Selected: IoT/SCADA Stack + NVR"
+            echo "Selected: NVR only"
+            show_nvr_memory_warning
+            save_stack_config "nvr_only"
+            ;;
+        3)
+            echo ""
+            echo "Selected: Both IoT/SCADA Stack + NVR"
             show_nvr_memory_warning
             save_stack_config "iot_nvr"
             ;;
         *)
             echo ""
-            echo "Invalid choice. Please run the setup again and select 1 or 2."
+            echo "Invalid choice. Please run the setup again and select 1, 2, or 3."
             exit 1
             ;;
     esac
@@ -355,7 +362,7 @@ setup_system() {
     echo "--- Breakdown Complete. Starting Setup ---"
 
     # 2. Mount SMB Share only if NVR is enabled
-    if [ "$stack_type" == "iot_nvr" ]; then
+    if [ "$stack_type" == "iot_nvr" ] || [ "$stack_type" == "nvr_only" ]; then
         mount_smb_share
     fi
     
@@ -383,6 +390,12 @@ setup_system() {
         # Skip Frigate if stack type is iot_only
         if [ "$SERVICE" == "frigate" ] && [ "$stack_type" == "iot_only" ]; then
             echo "Skipping Frigate (NVR not enabled in configuration)"
+            SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
+            continue
+        fi
+        # Skip IoT services if stack type is nvr_only
+        if [ "$SERVICE" != "frigate" ] && [ "$stack_type" == "nvr_only" ]; then
+            echo "Skipping $SERVICE (IoT/SCADA not enabled in configuration)"
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
         fi
@@ -422,11 +435,16 @@ setup_system() {
 
     echo ""
     echo "Access Points:"
-    echo " - Grafana Web UI: http://<host_ip>:3000"
-    if [ "$stack_type" == "iot_nvr" ]; then
+    if [ "$stack_type" == "nvr_only" ]; then
         echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT} (Default: 5000)"
+    elif [ "$stack_type" == "iot_only" ]; then
+        echo " - Grafana Web UI: http://<host_ip>:3000"
+        echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT} (Default: 1880)"
+    else
+        echo " - Grafana Web UI: http://<host_ip>:3000"
+        echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT} (Default: 5000)"
+        echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT} (Default: 1880)"
     fi
-    echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT} (Default: 1880)"
     echo ""
     echo "To change your stack configuration, delete ${CONFIG_FILE} and run ./startup.sh again"
 }

@@ -2,6 +2,10 @@
 
 A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE MicroOS host.
 
+## Credits
+
+This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The remaining 1% was me being lazy and asking them to do all the work.
+
 ## Features
 
 * **Host OS:** Optimized for **openSUSE MicroOS** (or other transactional OS) for enhanced stability and rollback capability.
@@ -18,7 +22,8 @@ A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acqu
 * **CPU:** Multi-core processor (4+ cores recommended for optimal performance)
 * **RAM:** 
   * IoT/SCADA Stack only: Minimum 4GB RAM
-  * IoT/SCADA Stack + NVR (Frigate): Minimum 8GB RAM required
+  * NVR (Frigate) only: Minimum 8GB RAM required
+  * Both IoT/SCADA Stack + NVR: Minimum 8GB RAM required
   * Note: The system will display a warning if you select NVR mode with less than 8GB RAM, but will allow you to proceed
 * **Storage:** 
   * Minimum 32GB for OS and containers
@@ -85,9 +90,11 @@ The script will ask you to choose between:
 
 1. **IoT/SCADA Stack only** - Includes: Mosquitto (MQTT Broker), InfluxDB (Time Series Database), Grafana (Visualization), Node-RED (Automation), and Zigbee2MQTT (Zigbee Gateway)
 
-2. **IoT/SCADA Stack + NVR** - Includes all the above plus Frigate (Network Video Recorder for camera management and object detection)
+2. **NVR only** - Includes: Frigate (Network Video Recorder for camera management and object detection)
 
-**Memory Warning:** If you select the NVR option and your system has less than 8GB of RAM, the script will display a warning. You can still proceed, but Frigate may not perform optimally with insufficient memory.
+3. **Both IoT/SCADA Stack + NVR** - Includes all services from both options above
+
+**Memory Warning:** If you select option 2 (NVR only) or option 3 (Both) and your system has less than 8GB of RAM, the script will display a warning. You can still proceed, but Frigate may not perform optimally with insufficient memory.
 
 **Automatic Secret Generation:** The script will automatically generate secure random passwords and tokens for all services. No manual secret generation is required.
 
