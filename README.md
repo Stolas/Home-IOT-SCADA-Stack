@@ -119,7 +119,7 @@ The stack includes an Nginx reverse proxy that allows you to access services via
 
 **Option 1: Local DNS/Hosts File**
 
-Add entries to your `/etc/hosts` file (or equivalent on Windows: `C:\Windows\System32\drivers\etc\hosts`):
+Add entries to your `/etc/hosts` file:
 
 ```
 <host_ip> grafana.home.local
