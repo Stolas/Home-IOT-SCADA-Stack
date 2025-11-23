@@ -73,6 +73,7 @@ echo ""
 # --- Check SELinux status ---
 echo "Checking SELinux status..."
 
+SELINUX_AVAILABLE=true
 if ! command -v getenforce &> /dev/null; then
     echo "ℹ️  SELinux tools not installed (getenforce not found)"
     echo "   If you're on openSUSE/SUSE, install with:"
@@ -81,61 +82,52 @@ if ! command -v getenforce &> /dev/null; then
     echo ""
     echo "   If SELinux is not in use on your system, you can ignore this."
     echo ""
-    exit 0
-fi
-
-SELINUX_STATUS=$(getenforce 2>/dev/null || echo "Unknown")
-echo "  SELinux status: ${SELINUX_STATUS}"
-echo ""
-
-if [ "${SELINUX_STATUS}" = "Disabled" ]; then
-    echo "✓ SELinux is disabled - no context issues expected"
+    SELINUX_AVAILABLE=false
+    SELINUX_OK=true  # No SELinux, so no SELinux issues
+else
+    SELINUX_STATUS=$(getenforce 2>/dev/null || echo "Unknown")
+    echo "  SELinux status: ${SELINUX_STATUS}"
     echo ""
-    
-    if [ "${PERMS_OK}" = true ]; then
-        echo "============================================================"
-        echo "  ✓ All checks passed - no issues detected"
-        echo "============================================================"
-    else
-        echo "============================================================"
-        echo "  Run with --fix to attempt automatic repairs"
-        echo "============================================================"
-    fi
-    exit 0
-fi
 
-# SELinux is enabled - check context
-echo "Checking SELinux context..."
-
-if command -v ls &> /dev/null && ls -Z "${NGINX_CONF}" &> /dev/null; then
-    CURRENT_CONTEXT=$(ls -Z "${NGINX_CONF}" 2>/dev/null | awk '{print $1}')
-    echo "  Current context: ${CURRENT_CONTEXT}"
-    echo ""
-    
-    # Check if context is suitable for containers
-    if echo "${CURRENT_CONTEXT}" | grep -q "container_file_t\|svirt_sandbox_file_t"; then
-        echo "✓ SELinux context is suitable for Podman containers"
+    if [ "${SELINUX_STATUS}" = "Disabled" ]; then
+        echo "✓ SELinux is disabled - no context issues expected"
+        echo ""
         SELINUX_OK=true
     else
-        echo "❌ SELinux context may prevent Podman from accessing this file"
+        # SELinux is enabled - check context
+        echo "Checking SELinux context..."
+        
+        if command -v ls &> /dev/null && ls -Z "${NGINX_CONF}" &> /dev/null; then
+            CURRENT_CONTEXT=$(ls -Z "${NGINX_CONF}" 2>/dev/null | awk '{print $1}')
+            echo "  Current context: ${CURRENT_CONTEXT}"
+            echo ""
+            
+            # Check if context is suitable for containers
+            if echo "${CURRENT_CONTEXT}" | grep -q "container_file_t\|svirt_sandbox_file_t"; then
+                echo "✓ SELinux context is suitable for Podman containers"
+                SELINUX_OK=true
+            else
+                echo "❌ SELinux context may prevent Podman from accessing this file"
+                echo ""
+                echo "   Current context: ${CURRENT_CONTEXT}"
+                echo "   Expected context: *:container_file_t:* or *:svirt_sandbox_file_t:*"
+                echo ""
+                echo "   This is the likely cause of 'Permission denied' errors"
+                echo "   when nginx tries to read /etc/nginx/nginx.conf"
+                SELINUX_OK=false
+            fi
+        else
+            echo "⚠️  Could not determine SELinux context"
+            SELINUX_OK=false
+        fi
+        
         echo ""
-        echo "   Current context: ${CURRENT_CONTEXT}"
-        echo "   Expected context: *:container_file_t:* or *:svirt_sandbox_file_t:*"
-        echo ""
-        echo "   This is the likely cause of 'Permission denied' errors"
-        echo "   when nginx tries to read /etc/nginx/nginx.conf"
-        SELINUX_OK=false
     fi
-else
-    echo "⚠️  Could not determine SELinux context"
-    SELINUX_OK=false
 fi
-
-echo ""
-echo "============================================================"
 
 # --- Show summary and recommendations ---
 if [ "${PERMS_OK}" = true ] && [ "${SELINUX_OK}" = true ]; then
+    echo "============================================================"
     echo "  ✓ All checks passed - no issues detected"
     echo "============================================================"
     exit 0
