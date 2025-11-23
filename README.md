@@ -1,6 +1,6 @@
-# Home IoT SCADA Stack for openSUSE MicroOS
+# Home IoT SCADA Stack for openSUSE Leap Micro
 
-A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE MicroOS host.
+A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE Leap Micro host.
 
 ## Credits
 
@@ -8,13 +8,13 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 ## Features
 
-* **Host OS:** Optimized for **openSUSE MicroOS** (or other transactional OS) for enhanced stability and rollback capability.
+* **Host OS:** Optimized for **openSUSE Leap Micro** (or other transactional OS) for enhanced stability and rollback capability.
 * **Container Runtime:** Uses **Podman** for managing containers, networks, and persistent volumes.
 * **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate with Double-Take facial recognition), and **Zigbee Gateway** (Zigbee2MQTT).
-* **Reverse Proxy:** Nginx-based reverse proxy with hostname-based routing for all services, including openSUSE Cockpit web console.
+* **Reverse Proxy:** Nginx-based reverse proxy with hostname-based routing for all services, including openSUSE Cockpit web console. Nginx configuration is dynamically generated based on running services to prevent startup failures.
 * **Security:** Uses `create_secrets.sh` to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
 * **External Storage:** Includes logic to mount an **SMB/CIFS** share for Frigate recordings on the host machine.
-* **Resilience:** The `startup.sh` script continues running even if individual service starts fail, providing a complete status report.
+* **Resilience:** The `startup.sh` script continues running even if individual service starts fail, providing a complete status report. Nginx automatically adapts to only proxy running services.
 
 ## System Requirements
 
@@ -34,8 +34,8 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 ### Software Requirements
 
-* **Operating System:** openSUSE MicroOS (or compatible transactional Linux distribution)
-* **Container Runtime:** Podman (installed by default on MicroOS)
+* **Operating System:** openSUSE Leap Micro (or compatible transactional Linux distribution)
+* **Container Runtime:** Podman (installed by default on Leap Micro)
 * **Package Dependencies:**
   * `cifs-utils` - Required for SMB/CIFS share mounting (only if using NVR/Frigate)
   * `sudo` - Required for mounting shares and system operations
@@ -61,11 +61,11 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 Follow these steps to set up and run the entire stack.
 
-### 1. Prerequisites (openSUSE MicroOS)
+### 1. Prerequisites (openSUSE Leap Micro)
 
 You must have the following installed on your host machine:
 
-* **Podman:** Installed by default on MicroOS.
+* **Podman:** Installed by default on Leap Micro.
 * **cifs-utils:** Required only if you plan to use the NVR (Frigate) with SMB share mounting. Use `transactional-update` to install this package permanently:
 
 ```bash
@@ -105,7 +105,7 @@ The script will ask you to choose between:
 After the automatic setup, you must manually edit the `secrets.env` file to configure:
 
 * `ZIGBEE_DEVICE_PATH` - Update with the path to your Zigbee adapter (e.g., `/dev/ttyACM0` or `/dev/serial/by-id/...`)
-* `PODMAN_SOCKET_PATH` - Update for Node-RED integration. On modern Podman/MicroOS systems, this is typically:
+* `PODMAN_SOCKET_PATH` - Update for Node-RED integration. On modern Podman/Leap Micro systems, this is typically:
 
 ```bash
 PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
@@ -278,7 +278,7 @@ podman logs codesysgateway
 | **Mosquitto** | MQTT Broker | Port 1883 (Internal/External) | IoT/SCADA modes only |
 | **InfluxDB** | Time-Series Database | Port 8086 (Internal/External) | IoT/SCADA modes only |
 
-**Note:** Cockpit is installed by default on openSUSE MicroOS. If for any reason it is not installed or running, you can install and enable it with:
+**Note:** Cockpit is installed by default on openSUSE Leap Micro. If for any reason it is not installed or running, you can install and enable it with:
 ```bash
 sudo transactional-update pkg install cockpit
 sudo reboot
@@ -301,7 +301,7 @@ sudo systemctl enable --now cockpit.socket
 
 ## Troubleshooting
 
-* **openSUSE MicroOS Updates:** Use `sudo transactional-update` for package management and system upgrades, followed by a reboot.
+* **openSUSE Leap Micro Updates:** Use `sudo transactional-update` for package management and system upgrades, followed by a reboot.
 
 * **Container Logs:** If a container starts with a FAILURE status, check the logs for detailed errors:
 
@@ -310,6 +310,24 @@ podman logs <service_name>
 ```
 
 * **Zigbee Adapter:** If zigbee2mqtt fails, ensure the `ZIGBEE_DEVICE_PATH` is correct and that the host user has the necessary permissions.
+
+* **Nginx Dynamic Configuration:** The nginx reverse proxy is configured dynamically based on which services are actually running. This prevents nginx startup failures when some services are not configured or fail to start. During startup:
+  1. All backend services are started first
+  2. The system waits 3 seconds for services to stabilize
+  3. Running services are detected using `podman ps`
+  4. Nginx configuration is generated with only the running services
+  5. Nginx starts last as the reverse proxy
+
+This means if a service like zigbee2mqtt is not configured or fails to start, nginx will automatically exclude it from the configuration and start successfully. You'll see output like:
+
+```
+Waiting 3 seconds for services to stabilize...
+Checking which services are running and generating nginx configuration...
+  [ok] Grafana is running - adding to nginx config
+  [ok] Node-RED is running - adding to nginx config
+  [INFO] Zigbee2MQTT is not running - skipping from nginx config
+Starting nginx (reverse proxy) after all upstream services...
+```
 
 * **Port 80 Permission Error (Rootless Podman):** If you encounter a permission error when starting the nginx container (attempting to bind to port 80), this is because ports below 1024 are considered "privileged ports" and normally require root access. When running Podman in rootless mode (as a non-root user), you may see an error like:
 
