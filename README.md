@@ -10,7 +10,7 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 * **Host OS:** Optimized for **openSUSE MicroOS** (or other transactional OS) for enhanced stability and rollback capability.
 * **Container Runtime:** Uses **Podman** for managing containers, networks, and persistent volumes.
-* **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate), and **Zigbee Gateway** (Zigbee2MQTT).
+* **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate with Double-Take facial recognition), and **Zigbee Gateway** (Zigbee2MQTT).
 * **Reverse Proxy:** Nginx-based reverse proxy with hostname-based routing for all services, including openSUSE Cockpit web console.
 * **Security:** Uses `create_secrets.sh` to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
 * **External Storage:** Includes logic to mount an **SMB/CIFS** share for Frigate recordings on the host machine.
@@ -51,6 +51,7 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 * **Port Availability:** Ensure the following ports are available:
   * 1883 (Mosquitto MQTT)
   * 3000 (Grafana)
+  * 3001 (Double-Take) - only if NVR is enabled
   * 5000 (Frigate, configurable) - only if NVR is enabled
   * 8080 (Zigbee2MQTT Web UI)
   * 8086 (InfluxDB)
@@ -91,7 +92,7 @@ The script will ask you to choose between:
 
 1. **IoT/SCADA Stack only** - Includes: Mosquitto (MQTT Broker), InfluxDB (Time Series Database), Grafana (Visualization), Node-RED (Automation), and Zigbee2MQTT (Zigbee Gateway)
 
-2. **NVR only** - Includes: Frigate (Network Video Recorder for camera management and object detection)
+2. **NVR only** - Includes: Frigate (Network Video Recorder for camera management and object detection) and Double-Take (facial recognition)
 
 3. **Both IoT/SCADA Stack + NVR** - Includes all services from both options above
 
@@ -111,7 +112,7 @@ PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
 ```
 
 * Other site-specific variables like `TZ` (timezone), `SMB_SERVER`, `SMB_SHARE`, `SMB_USER` (if using NVR), etc.
-* Nginx reverse proxy hostnames: `BASE_DOMAIN`, `GRAFANA_HOSTNAME`, `FRIGATE_HOSTNAME`, `NODERED_HOSTNAME`, `ZIGBEE2MQTT_HOSTNAME`, `COCKPIT_HOSTNAME`
+* Nginx reverse proxy hostnames: `BASE_DOMAIN`, `GRAFANA_HOSTNAME`, `FRIGATE_HOSTNAME`, `NODERED_HOSTNAME`, `ZIGBEE2MQTT_HOSTNAME`, `COCKPIT_HOSTNAME`, `DOUBLETAKE_HOSTNAME`
 
 ### 3. Configure Frigate (NVR Only)
 
@@ -148,7 +149,7 @@ To troubleshoot or manually start a specific service:
 # Example: ./startup.sh start zigbee2mqtt
 ```
 
-Available service names: `mosquitto`, `influxdb`, `zigbee2mqtt`, `frigate`, `grafana`, `nodered`.
+Available service names: `mosquitto`, `influxdb`, `zigbee2mqtt`, `frigate`, `grafana`, `nodered`, `nginx`, `doubletake`.
 
 **Changing Stack Configuration**
 
@@ -175,24 +176,24 @@ To extend the stack with a new service, such as the **CODESYS Gateway**, you nee
 
 ### Step 1: Update Service Definitions in startup.sh
 
-Open `startup.sh` and locate the service definitions section (around line 467-481).
+Open `startup.sh` and locate the service definitions section (around line 492-500).
 
 **Add the Service Command:**
 
 Add your service to the `SERVICE_CMDS` associative array. Each service needs a unique name and a complete podman run command.
 
 ```bash
-# Add after line 480, before SERVICE_NAMES
+# Add after line 499, before SERVICE_NAMES
 SERVICE_CMDS[codesysgateway]="podman run -d --name codesysgateway --restart unless-stopped --network ${NETWORK_NAME} -p 12110:12110/udp -p 12111:12111/tcp docker.io/codesys/codesyscontrol-gateway-x64:latest"
 ```
 
 **Add to Service List:**
 
-Add the service name to the `SERVICE_NAMES` array (line 481):
+Add the service name to the `SERVICE_NAMES` array (line 500):
 
 ```bash
 # Update this line:
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx codesysgateway)
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake codesysgateway)
 ```
 
 **Important Notes:**
@@ -202,10 +203,10 @@ SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx code
 
 ### Step 2: (Optional) Add to Breakdown Function
 
-If you want the service to be properly cleaned up when running `./startup.sh breakdown`, add it to the `CONTAINER_NAMES` array in the `breakdown_containers_only()` function (around line 423):
+If you want the service to be properly cleaned up when running `./startup.sh breakdown`, add it to the `CONTAINER_NAMES` array in the `breakdown_containers_only()` function (around line 445):
 
 ```bash
-CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "codesysgateway")
+CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake" "codesysgateway")
 ```
 
 ### Step 3: (Optional) Configure Nginx Proxy
