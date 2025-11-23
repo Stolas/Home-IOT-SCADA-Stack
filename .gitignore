@@ -1,5 +1,6 @@
 # Secret
 secrets.env
+frigate_config.yml
 
 # Stack configuration
 .stack_config
