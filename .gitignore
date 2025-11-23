@@ -1,6 +1,9 @@
 # Secret
 secrets.env
 
+# Stack configuration
+.stack_config
+
 # Vim temporary files
 *~
 *.swp

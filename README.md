@@ -16,10 +16,13 @@ A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acqu
 ### Hardware Requirements
 
 * **CPU:** Multi-core processor (4+ cores recommended for optimal performance)
-* **RAM:** Minimum 4GB, 8GB+ recommended for smooth operation of all services
+* **RAM:** 
+  * IoT/SCADA Stack only: Minimum 4GB RAM
+  * IoT/SCADA Stack + NVR (Frigate): Minimum 8GB RAM required
+  * Note: The system will display a warning if you select NVR mode with less than 8GB RAM, but will allow you to proceed
 * **Storage:** 
   * Minimum 32GB for OS and containers
-  * Additional storage for Frigate recordings (external NAS/SMB share recommended)
+  * Additional storage for Frigate recordings (external NAS/SMB share recommended) if NVR is enabled
 * **Network:** Ethernet connection recommended for stability
 * **USB Ports:** At least one available USB port for Zigbee coordinator device
 
@@ -28,13 +31,13 @@ A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acqu
 * **Operating System:** openSUSE MicroOS (or compatible transactional Linux distribution)
 * **Container Runtime:** Podman (installed by default on MicroOS)
 * **Package Dependencies:**
-  * `cifs-utils` - Required for SMB/CIFS share mounting
+  * `cifs-utils` - Required for SMB/CIFS share mounting (only if using NVR/Frigate)
   * `sudo` - Required for mounting shares and system operations
 
 ### Optional Hardware
 
 * **Zigbee Coordinator:** USB Zigbee adapter (e.g., CC2531, CC2652, ConBee II) for Zigbee2MQTT
-* **Coral TPU:** Google Coral Edge TPU for accelerated object detection in Frigate (USB or M.2 versions)
+* **Coral TPU:** Google Coral Edge TPU for accelerated object detection in Frigate (USB or M.2 versions) - only needed if using NVR
 
 ### Network Requirements
 
@@ -42,7 +45,7 @@ A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acqu
 * **Port Availability:** Ensure the following ports are available:
   * 1883 (Mosquitto MQTT)
   * 3000 (Grafana)
-  * 5000 (Frigate, configurable)
+  * 5000 (Frigate, configurable) - only if NVR is enabled
   * 8080 (Zigbee2MQTT Web UI)
   * 8086 (InfluxDB)
   * 1880 (Node-RED, configurable)
@@ -56,58 +59,68 @@ Follow these steps to set up and run the entire stack.
 You must have the following installed on your host machine:
 
 * **Podman:** Installed by default on MicroOS.
-* **cifs-utils:** Required for mounting the SMB share. Use `transactional-update` to install this package permanently:
+* **cifs-utils:** Required only if you plan to use the NVR (Frigate) with SMB share mounting. Use `transactional-update` to install this package permanently:
 
 ```bash
 sudo transactional-update pkg install cifs-utils
 sudo reboot
 ```
 
-* **sudo privileges:** Required for mounting the SMB share.
+* **sudo privileges:** Required for mounting the SMB share (if using NVR).
 
-### 2. Configure Environment Variables
+### 2. First-Run Setup
 
-The stack uses a single `.env` file for all configurations.
+On your first run, the startup script will guide you through an interactive configuration:
 
-**Review the Example:** Examine `secrets.env-example` to understand the required variables.
-
-**Generate Secrets:** Run the `create_secrets.sh` script. This will create your secure `secrets.env` file.
+**Run the startup script:**
 
 ```bash
-chmod +x create_secrets.sh
-./create_secrets.sh
+chmod +x startup.sh
+./startup.sh
 ```
 
-**Manual Configuration (CRITICAL):**
+**Configuration Options:**
 
-* Edit the newly created `secrets.env` file.
-* Crucially, update `ZIGBEE_DEVICE_PATH` with the path to your Zigbee adapter (e.g., `/dev/ttyACM0` or `/dev/ttyUSB0`).
-* Update the `PODMAN_SOCKET_PATH` variable for Node-RED integration. On modern Podman/MicroOS systems, this is typically:
+The script will ask you to choose between:
+
+1. **IoT/SCADA Stack only** - Includes: Mosquitto (MQTT Broker), InfluxDB (Time Series Database), Grafana (Visualization), Node-RED (Automation), and Zigbee2MQTT (Zigbee Gateway)
+
+2. **IoT/SCADA Stack + NVR** - Includes all the above plus Frigate (Network Video Recorder for camera management and object detection)
+
+**Memory Warning:** If you select the NVR option and your system has less than 8GB of RAM, the script will display a warning. You can still proceed, but Frigate may not perform optimally with insufficient memory.
+
+**Automatic Secret Generation:** The script will automatically generate secure random passwords and tokens for all services. No manual secret generation is required.
+
+**Manual Configuration Required:**
+
+After the automatic setup, you must manually edit the `secrets.env` file to configure:
+
+* `ZIGBEE_DEVICE_PATH` - Update with the path to your Zigbee adapter (e.g., `/dev/ttyACM0` or `/dev/serial/by-id/...`)
+* `PODMAN_SOCKET_PATH` - Update for Node-RED integration. On modern Podman/MicroOS systems, this is typically:
 
 ```bash
 PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
 ```
 
-* Update all other non-secret, site-specific variables (e.g., `FRIGATE_PORT`, `SMB_SERVER`, `TZ`).
+* Other site-specific variables like `TZ` (timezone), `SMB_SERVER`, `SMB_SHARE`, `SMB_USER` (if using NVR), etc.
 
-### 3. Configure Frigate
+### 3. Configure Frigate (NVR Only)
 
-The Frigate container uses a separate configuration file.
+If you selected the NVR option, you need to configure Frigate:
 
 * Edit the `frigate_config.yml` file to define your cameras and settings.
 
 ### 4. Run the Stack
 
-The `startup.sh` script manages the entire lifecycle.
-
-**Default Start / Setup**
-
-This stops any existing containers, unmounts the SMB share, sets up the Podman network and volumes, mounts the SMB share, and starts all services.
+After completing the manual configuration in `secrets.env`, run the setup again:
 
 ```bash
-chmod +x startup.sh
-./startup.sh setup  # or simply ./startup.sh
+./startup.sh
 ```
+
+This will start all configured services based on your first-run choices.
+
+### 5. Additional Operations
 
 **Breakdown (Stop and Remove Containers)**
 
@@ -127,6 +140,25 @@ To troubleshoot or manually start a specific service:
 ```
 
 Available service names: `mosquitto`, `influxdb`, `zigbee2mqtt`, `frigate`, `grafana`, `nodered`.
+
+**Changing Stack Configuration**
+
+If you want to change between IoT/SCADA only and IoT/SCADA + NVR modes:
+
+1. Stop all running containers:
+   ```bash
+   ./startup.sh breakdown
+   ```
+
+2. Delete the configuration file:
+   ```bash
+   rm .stack_config
+   ```
+
+3. Run the setup again to go through the configuration wizard:
+   ```bash
+   ./startup.sh
+   ```
 
 ## Adding New Services (Example: CODESYS Gateway)
 
@@ -169,15 +201,15 @@ The CODESYS Gateway container will now be started and managed by the startup.sh 
 
 ## Components and Access Points
 
-| Component | Purpose | Access URL (Default Ports) |
-|-----------|---------|----------------------------|
-| **Grafana** | Data Visualization (SCADA UI) | http://&lt;host_ip&gt;:3000 |
-| **Frigate** | NVR and Object Detection | http://&lt;host_ip&gt;:&lt;FRIGATE_PORT&gt; (default: 5000) |
-| **Node-RED** | Flow-Based Automation | http://&lt;host_ip&gt;:&lt;NODERED_PORT&gt; (default: 1880) |
-| **Zigbee2MQTT** | Zigbee Device Control | http://&lt;host_ip&gt;:8080 (Web UI) |
-| **CODESYS Gateway** | PLC Runtime Communication | udp/tcp &lt;host_ip&gt;:12110/12111 |
-| **Mosquitto** | MQTT Broker | Port 1883 (Internal/External) |
-| **InfluxDB** | Time-Series Database | Port 8086 (Internal/External) |
+| Component | Purpose | Access URL (Default Ports) | Notes |
+|-----------|---------|----------------------------|-------|
+| **Grafana** | Data Visualization (SCADA UI) | http://&lt;host_ip&gt;:3000 | Always included |
+| **Frigate** | NVR and Object Detection | http://&lt;host_ip&gt;:&lt;FRIGATE_PORT&gt; (default: 5000) | Only with NVR mode |
+| **Node-RED** | Flow-Based Automation | http://&lt;host_ip&gt;:&lt;NODERED_PORT&gt; (default: 1880) | Always included |
+| **Zigbee2MQTT** | Zigbee Device Control | http://&lt;host_ip&gt;:8080 (Web UI) | Always included |
+| **CODESYS Gateway** | PLC Runtime Communication | udp/tcp &lt;host_ip&gt;:12110/12111 | Optional add-on |
+| **Mosquitto** | MQTT Broker | Port 1883 (Internal/External) | Always included |
+| **InfluxDB** | Time-Series Database | Port 8086 (Internal/External) | Always included |
 
 ## Project Structure
 
@@ -185,11 +217,12 @@ The CODESYS Gateway container will now be started and managed by the startup.sh 
 |----------------|-------------|
 | **startup.sh** | Main script for managing setup, breakdown, and service start. (Executable) |
 | **create_secrets.sh** | Script to generate a secure secrets.env file from the example. (Executable) |
+| **.stack_config** | Stores your stack configuration choice (IoT only or IoT+NVR). Auto-generated on first run. |
 | **secrets.env-example** | Template file listing all necessary environment variables. |
 | **secrets.env** | Your configuration file. Created by create_secrets.sh. (Keep this secret!) |
 | **frigate_config.yml** | Configuration file for the Frigate NVR container. |
 | **mosquitto/** | Directory for Mosquitto configuration files (e.g., mosquitto.conf). |
-| **.gitignore** | Ensures secrets.env is never committed to Git. |
+| **.gitignore** | Ensures secrets.env and .stack_config are never committed to Git. |
 
 ## Troubleshooting
 

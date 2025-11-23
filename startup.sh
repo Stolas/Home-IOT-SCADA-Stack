@@ -16,6 +16,7 @@
 
 # --- Configuration ---
 ENV_FILE="secrets.env"
+CONFIG_FILE=".stack_config"
 NETWORK_NAME="iot_net"
 VOLUME_LIST=(
     "mosquitto_data"
@@ -65,6 +66,138 @@ GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
 MQTT_USER=$(read_var MQTT_USER)
 MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
 TZ=$(read_var TZ)
+
+
+# ----------------------------------------------------------------------
+# --- FIRST-RUN CONFIGURATION ---
+# ----------------------------------------------------------------------
+
+# --- Function to check available memory ---
+check_memory() {
+    # Get total memory in GiB
+    local total_mem_gib=$(free -g | awk '/^Mem:/{print $2}')
+    echo "$total_mem_gib"
+}
+
+# --- Function to display memory warning for NVR ---
+show_nvr_memory_warning() {
+    local mem_gib=$(check_memory)
+    if [ "$mem_gib" -lt 8 ]; then
+        echo ""
+        echo "================================================================"
+        echo "                    MEMORY WARNING                              "
+        echo "================================================================"
+        echo "WARNING: Your system has ${mem_gib}GiB of total RAM."
+        echo "Frigate NVR requires a minimum of 8GiB RAM for optimal operation."
+        echo "Running with insufficient memory may lead to performance issues."
+        echo "================================================================"
+        echo ""
+        sleep 3  # Give user time to read the warning
+    fi
+}
+
+# --- Function to save stack configuration ---
+save_stack_config() {
+    local config_choice=$1
+    echo "STACK_TYPE=${config_choice}" > "${CONFIG_FILE}"
+    echo "Configuration saved to ${CONFIG_FILE}"
+}
+
+# --- Function to read stack configuration ---
+read_stack_config() {
+    if [ -f "${CONFIG_FILE}" ]; then
+        grep "^STACK_TYPE=" "${CONFIG_FILE}" | cut -d'=' -f2
+    else
+        echo ""
+    fi
+}
+
+# --- First-run configuration menu ---
+first_run_configuration() {
+    echo ""
+    echo "================================================================"
+    echo "           FIRST-RUN CONFIGURATION                              "
+    echo "================================================================"
+    echo ""
+    echo "Welcome to the Home IoT SCADA Stack setup!"
+    echo ""
+    echo "Please choose your stack configuration:"
+    echo ""
+    echo "  1) IoT/SCADA Stack only (Mosquitto, InfluxDB, Grafana, Node-RED, Zigbee2MQTT)"
+    echo "  2) IoT/SCADA Stack + NVR (includes Frigate for camera recording)"
+    echo ""
+    echo -n "Enter your choice (1 or 2): "
+    read -r choice
+    
+    case "$choice" in
+        1)
+            echo ""
+            echo "Selected: IoT/SCADA Stack only"
+            save_stack_config "iot_only"
+            ;;
+        2)
+            echo ""
+            echo "Selected: IoT/SCADA Stack + NVR"
+            show_nvr_memory_warning
+            save_stack_config "iot_nvr"
+            ;;
+        *)
+            echo ""
+            echo "Invalid choice. Please run the setup again and select 1 or 2."
+            exit 1
+            ;;
+    esac
+    
+    echo ""
+    echo "Generating secrets automatically..."
+    if [ -x "./create_secrets.sh" ]; then
+        ./create_secrets.sh
+        if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to generate secrets. Please check create_secrets.sh"
+            exit 1
+        fi
+    else
+        echo "ERROR: create_secrets.sh not found or not executable"
+        exit 1
+    fi
+    
+    echo ""
+    echo "First-run configuration complete!"
+    echo ""
+}
+
+# --- Check if this is first run ---
+check_first_run() {
+    if [ ! -f "${CONFIG_FILE}" ]; then
+        # First run - do configuration
+        first_run_configuration
+        
+        # Re-read variables after secrets are generated
+        if [ -f "$ENV_FILE" ]; then
+            FRIGATE_PORT=$(read_var FRIGATE_PORT)
+            NODERED_PORT=$(read_var NODERED_PORT)
+            FRIGATE_RECORDINGS_HOST_PATH=$(read_var FRIGATE_RECORDINGS_HOST_PATH)
+            SMB_SERVER=$(read_var SMB_SERVER)
+            SMB_SHARE=$(read_var SMB_SHARE)
+            SMB_USER=$(read_var SMB_USER)
+            SMB_PASS=$(read_var SMB_PASS)
+            ZIGBEE_DEVICE_PATH=$(read_var ZIGBEE_DEVICE_PATH)
+            PODMAN_SOCKET_PATH=$(read_var PODMAN_SOCKET_PATH)
+            CURRENT_UID=$(id -u) 
+            INFLUXDB_ADMIN_USER=$(read_var INFLUXDB_ADMIN_USER)
+            INFLUXDB_ADMIN_PASSWORD=$(read_var INFLUXDB_ADMIN_PASSWORD)
+            INFLUXDB_ORG=$(read_var INFLUXDB_ORG)
+            INFLUXDB_BUCKET=$(read_var INFLUXDB_BUCKET)
+            INFLUXDB_ADMIN_TOKEN=$(read_var INFLUXDB_ADMIN_TOKEN)
+            GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER)
+            GRAFANA_ADMIN_PASSWORD=$(read_var GRAFANA_ADMIN_PASSWORD)
+            GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
+            MQTT_USER=$(read_var MQTT_USER)
+            MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
+            TZ=$(read_var TZ)
+        fi
+    fi
+}
 
 
 # ----------------------------------------------------------------------
@@ -178,6 +311,15 @@ start_manual_service() {
     local SERVICE_NAME=$1
     if [[ " ${SERVICE_NAMES[@]} " =~ " ${SERVICE_NAME} " ]]; then
         echo "--- Manual Start: ${SERVICE_NAME} ---"
+        
+        # Check if trying to start Frigate when not configured
+        local stack_type=$(read_stack_config)
+        if [ "$SERVICE_NAME" == "frigate" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "ERROR: Frigate is not enabled in your configuration (IoT/SCADA only mode)."
+            echo "To enable Frigate, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
+            exit 1
+        fi
+        
         # Ensure the network is up (critical prerequisite)
         podman network exists "${NETWORK_NAME}" || podman network create "${NETWORK_NAME}"
         # Only mount SMB if the service needs it (i.e., frigate)
@@ -201,13 +343,21 @@ start_manual_service() {
 # --- Setup Function: Create network, volumes, and start containers ---
 setup_system() {
     
+    # Check for first run and handle configuration
+    check_first_run
+    
+    # Get the stack configuration
+    local stack_type=$(read_stack_config)
+    
     # 1. Always break down containers first for a fresh start
     echo "--- Initiating System Breakdown for Fresh Start (Containers Only) ---"
     breakdown_containers_only
     echo "--- Breakdown Complete. Starting Setup ---"
 
-    # 2. Mount SMB Share 
-    mount_smb_share
+    # 2. Mount SMB Share only if NVR is enabled
+    if [ "$stack_type" == "iot_nvr" ]; then
+        mount_smb_share
+    fi
     
     echo ""
     echo "[1/3] Setting up Podman Network and Volumes..."
@@ -224,11 +374,18 @@ setup_system() {
     
     echo ""
     echo "[2/3] Starting containers (Output displayed below)..."
+    echo "Stack Type: ${stack_type}"
 
     # --------------------------------------------------
     # --- Start Services (Using run_service function) ---
     # --------------------------------------------------
     for SERVICE in "${SERVICE_NAMES[@]}"; do
+        # Skip Frigate if stack type is iot_only
+        if [ "$SERVICE" == "frigate" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "Skipping Frigate (NVR not enabled in configuration)"
+            SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
+            continue
+        fi
         run_service "$SERVICE" "${SERVICE_CMDS[$SERVICE]}"
     done
 
@@ -260,14 +417,18 @@ setup_system() {
             echo "  - Retry failed services manually: ./startup.sh start ${FAILED_SERVICES}"
         fi
     else
-        echo "SUCCESS: All core services were started."
+        echo "SUCCESS: All configured services were started."
     fi
 
     echo ""
     echo "Access Points:"
     echo " - Grafana Web UI: http://<host_ip>:3000"
-    echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT} (Default: 5000)"
+    if [ "$stack_type" == "iot_nvr" ]; then
+        echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT} (Default: 5000)"
+    fi
     echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT} (Default: 1880)"
+    echo ""
+    echo "To change your stack configuration, delete ${CONFIG_FILE} and run ./startup.sh again"
 }
 
 # --- Full Breakdown function: Containers and SMB share ---
