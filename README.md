@@ -115,7 +115,15 @@ PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
 
 ### 3. Configure DNS/Hostnames (Optional but Recommended)
 
-The stack includes an Nginx reverse proxy that allows you to access services via hostname instead of ports. To use this feature:
+The stack includes an Nginx reverse proxy that allows you to access services via hostname instead of ports. This provides a cleaner, more professional access method (e.g., `http://grafana.home.local` instead of `http://192.168.1.100:3000`).
+
+**Why hostname-based access?**
+- Easier to remember (grafana.home.local vs 192.168.1.100:3000)
+- More professional and organized
+- Allows for potential future HTTPS/SSL certificate integration
+- Simplifies bookmarking and sharing links
+
+**Important:** DNS configuration and firewall/network setup are **out-of-scope** for this project. You are responsible for configuring your own network, DNS, and firewall rules. The options below are provided as guidance only.
 
 **Option 1: Local DNS/Hosts File**
 
@@ -135,7 +143,7 @@ Configure your router or DNS server to resolve these hostnames to your server's 
 
 **Option 3: Direct Port Access**
 
-If you prefer not to configure hostnames, you can access services directly via their ports (see Access Points section).
+If you prefer not to configure hostnames, you can access services directly via their ports (see Access Points section below). This works immediately without any DNS configuration.
 
 ### 4. Configure Frigate (NVR Only)
 
