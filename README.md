@@ -11,6 +11,7 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 * **Host OS:** Optimized for **openSUSE MicroOS** (or other transactional OS) for enhanced stability and rollback capability.
 * **Container Runtime:** Uses **Podman** for managing containers, networks, and persistent volumes.
 * **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate), and **Zigbee Gateway** (Zigbee2MQTT).
+* **Reverse Proxy:** Nginx-based reverse proxy with hostname-based routing for all services, including openSUSE Cockpit web console.
 * **Security:** Uses `create_secrets.sh` to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
 * **External Storage:** Includes logic to mount an **SMB/CIFS** share for Frigate recordings on the host machine.
 * **Resilience:** The `startup.sh` script continues running even if individual service starts fail, providing a complete status report.
@@ -110,14 +111,39 @@ PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
 ```
 
 * Other site-specific variables like `TZ` (timezone), `SMB_SERVER`, `SMB_SHARE`, `SMB_USER` (if using NVR), etc.
+* Nginx reverse proxy hostnames: `BASE_DOMAIN`, `GRAFANA_HOSTNAME`, `FRIGATE_HOSTNAME`, `NODERED_HOSTNAME`, `ZIGBEE2MQTT_HOSTNAME`, `COCKPIT_HOSTNAME`
 
-### 3. Configure Frigate (NVR Only)
+### 3. Configure DNS/Hostnames (Optional but Recommended)
+
+The stack includes an Nginx reverse proxy that allows you to access services via hostname instead of ports. To use this feature:
+
+**Option 1: Local DNS/Hosts File**
+
+Add entries to your `/etc/hosts` file (or equivalent on Windows: `C:\Windows\System32\drivers\etc\hosts`):
+
+```
+<host_ip> grafana.home.local
+<host_ip> frigate.home.local
+<host_ip> nodered.home.local
+<host_ip> zigbee.home.local
+<host_ip> cockpit.home.local
+```
+
+**Option 2: Local DNS Server**
+
+Configure your router or DNS server to resolve these hostnames to your server's IP address. You can use wildcard DNS: `*.home.local -> <host_ip>`
+
+**Option 3: Direct Port Access**
+
+If you prefer not to configure hostnames, you can access services directly via their ports (see Access Points section).
+
+### 4. Configure Frigate (NVR Only)
 
 If you selected the NVR option, you need to configure Frigate:
 
 * Edit the `frigate_config.yml` file to define your cameras and settings.
 
-### 4. Run the Stack
+### 5. Run the Stack
 
 After completing the manual configuration in `secrets.env`, run the setup again:
 
@@ -210,13 +236,20 @@ The CODESYS Gateway container will now be started and managed by the startup.sh 
 
 | Component | Purpose | Access URL (Default Ports) | Notes |
 |-----------|---------|----------------------------|-------|
-| **Grafana** | Data Visualization (SCADA UI) | http://&lt;host_ip&gt;:3000 | Always included |
-| **Frigate** | NVR and Object Detection | http://&lt;host_ip&gt;:&lt;FRIGATE_PORT&gt; (default: 5000) | Only with NVR mode |
-| **Node-RED** | Flow-Based Automation | http://&lt;host_ip&gt;:&lt;NODERED_PORT&gt; (default: 1880) | Always included |
-| **Zigbee2MQTT** | Zigbee Device Control | http://&lt;host_ip&gt;:8080 (Web UI) | Always included |
-| **CODESYS Gateway** | PLC Runtime Communication | udp/tcp &lt;host_ip&gt;:12110/12111 | Optional add-on |
-| **Mosquitto** | MQTT Broker | Port 1883 (Internal/External) | Always included |
-| **InfluxDB** | Time-Series Database | Port 8086 (Internal/External) | Always included |
+| **Nginx** | Reverse Proxy | http://&lt;host_ip&gt; | Always included, provides hostname-based routing |
+| **Grafana** | Data Visualization (SCADA UI) | http://grafana.&lt;BASE_DOMAIN&gt; or :3000 | IoT/SCADA modes only |
+| **Frigate** | NVR and Object Detection | http://frigate.&lt;BASE_DOMAIN&gt; or :5000 | NVR modes only |
+| **Node-RED** | Flow-Based Automation | http://nodered.&lt;BASE_DOMAIN&gt; or :1880 | IoT/SCADA modes only |
+| **Zigbee2MQTT** | Zigbee Device Control | http://zigbee.&lt;BASE_DOMAIN&gt; or :8080 | IoT/SCADA modes only |
+| **Cockpit** | openSUSE Web Console | http://cockpit.&lt;BASE_DOMAIN&gt; | Requires Cockpit enabled on host |
+| **Mosquitto** | MQTT Broker | Port 1883 (Internal/External) | IoT/SCADA modes only |
+| **InfluxDB** | Time-Series Database | Port 8086 (Internal/External) | IoT/SCADA modes only |
+
+**Note:** Cockpit access via nginx requires Cockpit to be installed and running on the host. Install with:
+```bash
+sudo transactional-update pkg install cockpit
+sudo systemctl enable --now cockpit.socket
+```
 
 ## Project Structure
 
@@ -224,11 +257,12 @@ The CODESYS Gateway container will now be started and managed by the startup.sh 
 |----------------|-------------|
 | **startup.sh** | Main script for managing setup, breakdown, and service start. (Executable) |
 | **create_secrets.sh** | Script to generate a secure secrets.env file from the example. (Executable) |
-| **.stack_config** | Stores your stack configuration choice (IoT only or IoT+NVR). Auto-generated on first run. |
+| **.stack_config** | Stores your stack configuration choice (IoT only, NVR only, or both). Auto-generated on first run. |
 | **secrets.env-example** | Template file listing all necessary environment variables. |
 | **secrets.env** | Your configuration file. Created by create_secrets.sh. (Keep this secret!) |
 | **frigate_config.yml** | Configuration file for the Frigate NVR container. |
 | **mosquitto/** | Directory for Mosquitto configuration files (e.g., mosquitto.conf). |
+| **nginx/** | Directory for Nginx configuration files. nginx.conf is auto-generated based on stack type. |
 | **.gitignore** | Ensures secrets.env and .stack_config are never committed to Git. |
 
 ## Troubleshooting

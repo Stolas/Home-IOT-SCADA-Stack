@@ -4,6 +4,9 @@ secrets.env
 # Stack configuration
 .stack_config
 
+# Generated configurations
+nginx/nginx.conf
+
 # Vim temporary files
 *~
 *.swp

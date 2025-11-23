@@ -25,6 +25,7 @@ VOLUME_LIST=(
     "z2m_data"
     "grafana_data"
     "influxdb_data"
+    "nginx_cache"
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
@@ -66,6 +67,165 @@ GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
 MQTT_USER=$(read_var MQTT_USER)
 MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
 TZ=$(read_var TZ)
+BASE_DOMAIN=$(read_var BASE_DOMAIN)
+GRAFANA_HOSTNAME=$(read_var GRAFANA_HOSTNAME)
+FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME)
+NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
+ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
+COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
+
+
+# ----------------------------------------------------------------------
+# --- NGINX CONFIGURATION GENERATION ---
+# ----------------------------------------------------------------------
+
+# --- Function to generate nginx configuration based on stack type ---
+generate_nginx_config() {
+    local stack_type=$1
+    local nginx_conf_file="./nginx/nginx.conf"
+    
+    echo "Generating nginx configuration for stack type: ${stack_type}..."
+    
+    cat > "${nginx_conf_file}" << 'NGINX_EOF'
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    
+    sendfile on;
+    keepalive_timeout 65;
+    
+    # Logging
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+    
+    # Default server - redirect to available services
+    server {
+        listen 80 default_server;
+        server_name _;
+        
+        location / {
+            return 200 '<html><head><title>Home IoT/SCADA Stack</title></head><body><h1>Home IoT/SCADA Stack</h1><ul>SERVICES_LIST</ul></body></html>';
+            add_header Content-Type text/html;
+        }
+    }
+NGINX_EOF
+
+    # Add service configurations based on stack type
+    if [ "$stack_type" == "iot_only" ] || [ "$stack_type" == "iot_nvr" ]; then
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Grafana
+    server {
+        listen 80;
+        server_name ${GRAFANA_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://grafana:3000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
+    
+    # Node-RED
+    server {
+        listen 80;
+        server_name ${NODERED_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://nodered:1880;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+    
+    # Zigbee2MQTT
+    server {
+        listen 80;
+        server_name ${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://zigbee2mqtt:8080;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+NGINX_EOF
+    fi
+    
+    if [ "$stack_type" == "nvr_only" ] || [ "$stack_type" == "iot_nvr" ]; then
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Frigate NVR
+    server {
+        listen 80;
+        server_name ${FRIGATE_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://frigate:5000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
+NGINX_EOF
+    fi
+    
+    # Add Cockpit (openSUSE web console) proxy - assuming it runs on host
+    cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # openSUSE Cockpit Web Console
+    server {
+        listen 80;
+        server_name ${COCKPIT_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass https://host.containers.internal:9090;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_ssl_verify off;
+        }
+    }
+}
+NGINX_EOF
+
+    # Update the services list in the default page
+    local services_html=""
+    if [ "$stack_type" == "iot_only" ] || [ "$stack_type" == "iot_nvr" ]; then
+        services_html+="<li><a href=\"http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}\">Grafana</a></li>"
+        services_html+="<li><a href=\"http://${NODERED_HOSTNAME}.${BASE_DOMAIN}\">Node-RED</a></li>"
+        services_html+="<li><a href=\"http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}\">Zigbee2MQTT</a></li>"
+    fi
+    if [ "$stack_type" == "nvr_only" ] || [ "$stack_type" == "iot_nvr" ]; then
+        services_html+="<li><a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\">Frigate NVR</a></li>"
+    fi
+    services_html+="<li><a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\">openSUSE Cockpit</a></li>"
+    
+    sed -i "s|SERVICES_LIST|${services_html}|g" "${nginx_conf_file}"
+    
+    echo "Nginx configuration generated at ${nginx_conf_file}"
+}
 
 
 # ----------------------------------------------------------------------
@@ -202,6 +362,12 @@ check_first_run() {
             MQTT_USER=$(read_var MQTT_USER)
             MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
             TZ=$(read_var TZ)
+            BASE_DOMAIN=$(read_var BASE_DOMAIN)
+            GRAFANA_HOSTNAME=$(read_var GRAFANA_HOSTNAME)
+            FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME)
+            NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
+            ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
+            COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
         fi
     fi
 }
@@ -260,7 +426,7 @@ mount_smb_share() {
 # --- Breakdown function: Stop and Remove all containers (KEEP volumes) ---
 breakdown_containers_only() {
     echo "Stopping and removing containers..."
-    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered")
+    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx")
     
     for name in "${CONTAINER_NAMES[@]}"; do
         if podman ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
@@ -311,7 +477,8 @@ SERVICE_CMDS[zigbee2mqtt]="podman run -d --name zigbee2mqtt --restart unless-sto
 SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --network ${NETWORK_NAME} --privileged -e TZ=${TZ} -p ${FRIGATE_PORT}:5000/tcp -p 1935:1935 -v ${FRIGATE_RECORDINGS_HOST_PATH}:/media/frigate:rw -v ./frigate_config.yml:/config/config.yml:ro -v /etc/localtime:/etc/localtime:ro --shm-size 256m ghcr.io/blakeblackshear/frigate:stable"
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered)
+SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 -v ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx)
 
 # --- Manual Start Function ---
 start_manual_service() {
@@ -372,6 +539,9 @@ setup_system() {
         mount_smb_share
     fi
     
+    # 3. Generate nginx configuration based on stack type
+    generate_nginx_config "$stack_type"
+    
     echo ""
     echo "[1/3] Setting up Podman Network and Volumes..."
 
@@ -393,6 +563,12 @@ setup_system() {
     # --- Start Services (Using run_service function) ---
     # --------------------------------------------------
     for SERVICE in "${SERVICE_NAMES[@]}"; do
+        # Nginx always starts (it's the entry point for all services)
+        if [ "$SERVICE" == "nginx" ]; then
+            run_service "$SERVICE" "${SERVICE_CMDS[$SERVICE]}"
+            continue
+        fi
+        
         # Skip Frigate if stack type is iot_only
         if [ "$SERVICE" == "frigate" ] && [ "$stack_type" == "iot_only" ]; then
             echo "Skipping Frigate (NVR not enabled in configuration)"
@@ -441,15 +617,33 @@ setup_system() {
 
     echo ""
     echo "Access Points:"
+    echo ""
+    echo "Via Nginx Reverse Proxy (hostname-based):"
+    echo " - Service Index:  http://<host_ip> or http://${BASE_DOMAIN}"
     if [ "$stack_type" == "nvr_only" ]; then
-        echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT} (Default: 5000)"
+        echo " - Frigate NVR:    http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}"
+    elif [ "$stack_type" == "iot_only" ]; then
+        echo " - Grafana:        http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}"
+        echo " - Node-RED:       http://${NODERED_HOSTNAME}.${BASE_DOMAIN}"
+        echo " - Zigbee2MQTT:    http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}"
+    else
+        echo " - Grafana:        http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}"
+        echo " - Frigate NVR:    http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}"
+        echo " - Node-RED:       http://${NODERED_HOSTNAME}.${BASE_DOMAIN}"
+        echo " - Zigbee2MQTT:    http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}"
+    fi
+    echo " - Cockpit:        http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}"
+    echo ""
+    echo "Direct Access (port-based):"
+    if [ "$stack_type" == "nvr_only" ]; then
+        echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT}"
     elif [ "$stack_type" == "iot_only" ]; then
         echo " - Grafana Web UI: http://<host_ip>:3000"
-        echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT} (Default: 1880)"
+        echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT}"
     else
         echo " - Grafana Web UI: http://<host_ip>:3000"
-        echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT} (Default: 5000)"
-        echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT} (Default: 1880)"
+        echo " - Frigate Web UI: http://<host_ip>:${FRIGATE_PORT}"
+        echo " - Node-RED UI:    http://<host_ip>:${NODERED_PORT}"
     fi
     echo ""
     echo "To change your stack configuration, delete ${CONFIG_FILE} and run ./startup.sh again"
