@@ -455,7 +455,7 @@ NGINX_EOF
     echo "Nginx configuration generated at ${nginx_conf_file} based on running services"
 }
 
-# --- Function to check and fix SELinux context and permissions for nginx.conf ---
+# --- Function to check nginx.conf permissions ---
 check_and_fix_nginx_permissions() {
     local nginx_conf_file="./nginx/nginx.conf"
     
@@ -465,7 +465,7 @@ check_and_fix_nginx_permissions() {
     fi
     
     echo ""
-    echo "Checking nginx.conf permissions and SELinux context..."
+    echo "Checking nginx.conf permissions..."
     
     # Check file permissions
     local file_perms=$(stat -c "%a" "${nginx_conf_file}" 2>/dev/null || stat -f "%OLp" "${nginx_conf_file}" 2>/dev/null)
@@ -478,7 +478,7 @@ check_and_fix_nginx_permissions() {
     
     # Warn if permissions are not 644 or more restrictive
     if [ "${file_perms}" != "644" ] && [ "${file_perms}" != "444" ] && [ "${file_perms}" != "400" ] && [ "${file_perms}" != "600" ]; then
-        echo "  [WARNING]  WARNING: File permissions are ${file_perms}. Recommended: 644"
+        echo "  [WARNING] File permissions are ${file_perms}. Recommended: 644"
         echo "      To fix: chmod 644 ${nginx_conf_file}"
     else
         echo "  [ok] File permissions are acceptable"
@@ -486,61 +486,10 @@ check_and_fix_nginx_permissions() {
     
     # Warn if file is not owned by current user
     if [ "${file_owner}" != "${current_uid}" ]; then
-        echo "  [WARNING]  WARNING: File is owned by UID ${file_owner}, but current user is UID ${current_uid}"
+        echo "  [WARNING] File is owned by UID ${file_owner}, but current user is UID ${current_uid}"
         echo "      To fix: chown ${current_uid} ${nginx_conf_file}"
     else
         echo "  [ok] File ownership is correct"
-    fi
-    
-    # Check if SELinux is enabled
-    if command -v getenforce &> /dev/null; then
-        local selinux_status=$(getenforce 2>/dev/null || echo "Disabled")
-        echo "  SELinux status: ${selinux_status}"
-        
-        if [ "${selinux_status}" != "Disabled" ]; then
-            # Check current SELinux context
-            if command -v ls &> /dev/null && ls -Z "${nginx_conf_file}" &> /dev/null; then
-                local current_context=$(ls -Z "${nginx_conf_file}" 2>/dev/null | awk '{print $1}')
-                echo "  Current SELinux context: ${current_context}"
-                
-                # Check if context contains container_file_t or svirt_sandbox_file_t
-                if echo "${current_context}" | grep -q "container_file_t\|svirt_sandbox_file_t"; then
-                    echo "  [ok] SELinux context is already suitable for containers"
-                else
-                    echo "  [WARNING]  SELinux context may prevent Podman from reading this file"
-                    echo "      Current context: ${current_context}"
-                    echo "      Expected: *:container_file_t:* or similar"
-                    echo ""
-                    echo "  Attempting to fix SELinux context..."
-                    
-                    # Try to fix with chcon if available
-                    if command -v chcon &> /dev/null; then
-                        if chcon -t container_file_t "${nginx_conf_file}" 2>/dev/null; then
-                            echo "  [ok] SELinux context updated successfully with chcon"
-                            local new_context=$(ls -Z "${nginx_conf_file}" 2>/dev/null | awk '{print $1}')
-                            echo "    New context: ${new_context}"
-                        else
-                            echo "  [WARNING]  Could not update SELinux context with chcon (permission denied)"
-                            echo "      Manual fix required: sudo chcon -t container_file_t ${nginx_conf_file}"
-                        fi
-                    else
-                        echo "  [WARNING]  chcon command not found. Cannot auto-fix SELinux context."
-                        echo "      Manual fix required: sudo chcon -t container_file_t ${nginx_conf_file}"
-                    fi
-                fi
-            fi
-            
-            echo ""
-            echo "  [INFO]  For Podman rootless with SELinux, the volume mount will use :Z flag"
-            echo "     to automatically relabel the file. If issues persist, run:"
-            echo "       sudo chcon -t container_file_t ${nginx_conf_file}"
-            echo "     Or use the provided helper script: ./fix-nginx-selinux.sh"
-        else
-            echo "  [ok] SELinux is disabled, no context issues expected"
-        fi
-    else
-        echo "  [INFO]  SELinux tools not detected (getenforce not found)"
-        echo "     If you're on a system with SELinux, ensure it's installed"
     fi
     
     echo ""
@@ -797,7 +746,7 @@ SERVICE_CMDS[zigbee2mqtt]="podman run -d --name zigbee2mqtt --restart unless-sto
 SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --network ${NETWORK_NAME} --privileged -e TZ=${TZ} -p ${FRIGATE_PORT}:5000/tcp -p 1935:1935 -v ${FRIGATE_RECORDINGS_HOST_PATH}:/media/frigate:rw -v ./frigate_config.yml:/config/config.yml:ro -v /etc/localtime:/etc/localtime:ro --shm-size 256m ghcr.io/blakeblackshear/frigate:stable"
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
-SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 -v ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro,Z -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 -v ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
 SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
 
