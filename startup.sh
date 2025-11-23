@@ -319,11 +319,17 @@ start_manual_service() {
     if [[ " ${SERVICE_NAMES[@]} " =~ " ${SERVICE_NAME} " ]]; then
         echo "--- Manual Start: ${SERVICE_NAME} ---"
         
-        # Check if trying to start Frigate when not configured
+        # Check configuration and service compatibility
         local stack_type=$(read_stack_config)
         if [ "$SERVICE_NAME" == "frigate" ] && [ "$stack_type" == "iot_only" ]; then
             echo "ERROR: Frigate is not enabled in your configuration (IoT/SCADA only mode)."
             echo "To enable Frigate, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
+            exit 1
+        fi
+        
+        if [ "$SERVICE_NAME" != "frigate" ] && [ "$stack_type" == "nvr_only" ]; then
+            echo "ERROR: ${SERVICE_NAME} is not enabled in your configuration (NVR only mode)."
+            echo "To enable IoT/SCADA services, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
             exit 1
         fi
         
