@@ -416,10 +416,10 @@ Error: rootlessport cannot expose privileged port 80, you can add 'net.ipv4.ip_u
 Allowing unprivileged users to bind to privileged ports (ports < 1024) reduces a traditional security boundary in Unix-like systems. Historically, only root could bind to these ports, which prevented non-root processes from impersonating system services.
 
 **When to use this workaround:**
-* ✅ **Recommended for:** Single-user systems, home lab environments, personal IoT setups
-* ✅ **Safe when:** You trust all users on the system and understand the security tradeoff
-* ⚠️ **Use with caution in:** Multi-user environments or systems where additional security isolation is needed
-* ❌ **Not recommended for:** Production servers with untrusted users or strict security requirements
+* [OK] **Recommended for:** Single-user systems, home lab environments, personal IoT setups
+* [OK] **Safe when:** You trust all users on the system and understand the security tradeoff
+* [WARNING] **Use with caution in:** Multi-user environments or systems where additional security isolation is needed
+* [X] **Not recommended for:** Production servers with untrusted users or strict security requirements
 
 **Alternative approaches:**
 * Run nginx on a higher port (e.g., 8080) and use port forwarding at the router/firewall level

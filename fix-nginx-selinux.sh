@@ -22,7 +22,7 @@ echo ""
 
 # --- Check if nginx.conf exists ---
 if [ ! -f "${NGINX_CONF}" ]; then
-    echo "❌ ERROR: nginx.conf not found at ${NGINX_CONF}"
+    echo "[X] ERROR: nginx.conf not found at ${NGINX_CONF}"
     echo ""
     echo "   The nginx configuration file doesn't exist yet."
     echo "   Run './startup.sh' first to generate it."
@@ -30,7 +30,7 @@ if [ ! -f "${NGINX_CONF}" ]; then
     exit 1
 fi
 
-echo "✓ Found nginx.conf at ${NGINX_CONF}"
+echo "[ok] Found nginx.conf at ${NGINX_CONF}"
 echo ""
 
 # --- Check file permissions ---
@@ -48,24 +48,24 @@ PERMS_OK=true
 
 # Check if permissions are readable (at least 4 in the owner position)
 if [ "${FILE_PERMS}" != "644" ] && [ "${FILE_PERMS}" != "444" ] && [ "${FILE_PERMS}" != "600" ] && [ "${FILE_PERMS}" != "400" ]; then
-    echo "⚠️  WARNING: Unusual file permissions detected"
+    echo "[WARNING]  WARNING: Unusual file permissions detected"
     echo "   Recommended: 644 (readable by all, writable by owner)"
     echo "   Current: ${FILE_PERMS}"
     PERMS_OK=false
 else
-    echo "✓ File permissions are acceptable"
+    echo "[ok] File permissions are acceptable"
 fi
 
 # Check ownership
 if [ "${FILE_OWNER}" != "${CURRENT_UID}" ]; then
-    echo "⚠️  WARNING: File is not owned by current user"
+    echo "[WARNING]  WARNING: File is not owned by current user"
     echo "   File owner: UID ${FILE_OWNER}"
     echo "   Current user: UID ${CURRENT_UID}"
     echo "   This might cause issues with Podman rootless"
     PERMS_OK=false
     NEEDS_SUDO=true
 else
-    echo "✓ File ownership is correct"
+    echo "[ok] File ownership is correct"
 fi
 
 echo ""
@@ -75,7 +75,7 @@ echo "Checking SELinux status..."
 
 SELINUX_AVAILABLE=true
 if ! command -v getenforce &> /dev/null; then
-    echo "ℹ️  SELinux tools not installed (getenforce not found)"
+    echo "[INFO]  SELinux tools not installed (getenforce not found)"
     echo "   If you're on openSUSE/SUSE, install with:"
     echo "     sudo transactional-update pkg install setools-console"
     echo "     sudo reboot"
@@ -90,7 +90,7 @@ else
     echo ""
 
     if [ "${SELINUX_STATUS}" = "Disabled" ]; then
-        echo "✓ SELinux is disabled - no context issues expected"
+        echo "[ok] SELinux is disabled - no context issues expected"
         echo ""
         SELINUX_OK=true
     else
@@ -104,10 +104,10 @@ else
             
             # Check if context is suitable for containers
             if echo "${CURRENT_CONTEXT}" | grep -q "container_file_t\|svirt_sandbox_file_t"; then
-                echo "✓ SELinux context is suitable for Podman containers"
+                echo "[ok] SELinux context is suitable for Podman containers"
                 SELINUX_OK=true
             else
-                echo "❌ SELinux context may prevent Podman from accessing this file"
+                echo "[X] SELinux context may prevent Podman from accessing this file"
                 echo ""
                 echo "   Current context: ${CURRENT_CONTEXT}"
                 echo "   Expected context: *:container_file_t:* or *:svirt_sandbox_file_t:*"
@@ -117,7 +117,7 @@ else
                 SELINUX_OK=false
             fi
         else
-            echo "⚠️  Could not determine SELinux context"
+            echo "[WARNING]  Could not determine SELinux context"
             SELINUX_OK=false
         fi
         
@@ -128,7 +128,7 @@ fi
 # --- Show summary and recommendations ---
 if [ "${PERMS_OK}" = true ] && [ "${SELINUX_OK}" = true ]; then
     echo "============================================================"
-    echo "  ✓ All checks passed - no issues detected"
+    echo "  [ok] All checks passed - no issues detected"
     echo "============================================================"
     exit 0
 fi
@@ -174,10 +174,10 @@ if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
     if [ "${FILE_PERMS}" != "644" ]; then
         echo "Setting file permissions to 644..."
         if chmod 644 "${NGINX_CONF}"; then
-            echo "✓ Permissions updated"
+            echo "[ok] Permissions updated"
             FIXED_SOMETHING=true
         else
-            echo "❌ Failed to update permissions"
+            echo "[X] Failed to update permissions"
         fi
     fi
     
@@ -187,10 +187,10 @@ if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
         if [ "${NEEDS_SUDO}" = true ]; then
             echo "  (requires sudo access)"
             if sudo chown "${CURRENT_UID}" "${NGINX_CONF}"; then
-                echo "✓ Ownership updated"
+                echo "[ok] Ownership updated"
                 FIXED_SOMETHING=true
             else
-                echo "❌ Failed to update ownership"
+                echo "[X] Failed to update ownership"
             fi
         fi
     fi
@@ -202,7 +202,7 @@ if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
         if command -v chcon &> /dev/null; then
             # Try without sudo first
             if chcon -t container_file_t "${NGINX_CONF}" 2>/dev/null; then
-                echo "✓ SELinux context updated"
+                echo "[ok] SELinux context updated"
                 NEW_CONTEXT=$(ls -Z "${NGINX_CONF}" 2>/dev/null | awk '{print $1}')
                 echo "  New context: ${NEW_CONTEXT}"
                 FIXED_SOMETHING=true
@@ -210,24 +210,24 @@ if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
                 # Try with sudo
                 echo "  (requires sudo access)"
                 if sudo chcon -t container_file_t "${NGINX_CONF}"; then
-                    echo "✓ SELinux context updated with sudo"
+                    echo "[ok] SELinux context updated with sudo"
                     NEW_CONTEXT=$(ls -Z "${NGINX_CONF}" 2>/dev/null | awk '{print $1}')
                     echo "  New context: ${NEW_CONTEXT}"
                     FIXED_SOMETHING=true
                 else
-                    echo "❌ Failed to update SELinux context"
+                    echo "[X] Failed to update SELinux context"
                     echo "   You may need to run this with appropriate permissions"
                 fi
             fi
         else
-            echo "❌ chcon command not found - cannot fix SELinux context"
+            echo "[X] chcon command not found - cannot fix SELinux context"
         fi
     fi
     
     echo ""
     if [ "${FIXED_SOMETHING}" = true ]; then
         echo "============================================================"
-        echo "  ✓ Fixes applied - you can now run ./startup.sh"
+        echo "  [ok] Fixes applied - you can now run ./startup.sh"
         echo "============================================================"
     else
         echo "============================================================"

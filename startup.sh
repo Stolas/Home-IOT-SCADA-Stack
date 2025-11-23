@@ -267,18 +267,18 @@ check_and_fix_nginx_permissions() {
     
     # Warn if permissions are not 644 or more restrictive
     if [ "${file_perms}" != "644" ] && [ "${file_perms}" != "444" ] && [ "${file_perms}" != "400" ] && [ "${file_perms}" != "600" ]; then
-        echo "  ⚠️  WARNING: File permissions are ${file_perms}. Recommended: 644"
+        echo "  [WARNING]  WARNING: File permissions are ${file_perms}. Recommended: 644"
         echo "      To fix: chmod 644 ${nginx_conf_file}"
     else
-        echo "  ✓ File permissions are acceptable"
+        echo "  [ok] File permissions are acceptable"
     fi
     
     # Warn if file is not owned by current user
     if [ "${file_owner}" != "${current_uid}" ]; then
-        echo "  ⚠️  WARNING: File is owned by UID ${file_owner}, but current user is UID ${current_uid}"
+        echo "  [WARNING]  WARNING: File is owned by UID ${file_owner}, but current user is UID ${current_uid}"
         echo "      To fix: chown ${current_uid} ${nginx_conf_file}"
     else
-        echo "  ✓ File ownership is correct"
+        echo "  [ok] File ownership is correct"
     fi
     
     # Check if SELinux is enabled
@@ -294,9 +294,9 @@ check_and_fix_nginx_permissions() {
                 
                 # Check if context contains container_file_t or svirt_sandbox_file_t
                 if echo "${current_context}" | grep -q "container_file_t\|svirt_sandbox_file_t"; then
-                    echo "  ✓ SELinux context is already suitable for containers"
+                    echo "  [ok] SELinux context is already suitable for containers"
                 else
-                    echo "  ⚠️  SELinux context may prevent Podman from reading this file"
+                    echo "  [WARNING]  SELinux context may prevent Podman from reading this file"
                     echo "      Current context: ${current_context}"
                     echo "      Expected: *:container_file_t:* or similar"
                     echo ""
@@ -305,30 +305,30 @@ check_and_fix_nginx_permissions() {
                     # Try to fix with chcon if available
                     if command -v chcon &> /dev/null; then
                         if chcon -t container_file_t "${nginx_conf_file}" 2>/dev/null; then
-                            echo "  ✓ SELinux context updated successfully with chcon"
+                            echo "  [ok] SELinux context updated successfully with chcon"
                             local new_context=$(ls -Z "${nginx_conf_file}" 2>/dev/null | awk '{print $1}')
                             echo "    New context: ${new_context}"
                         else
-                            echo "  ⚠️  Could not update SELinux context with chcon (permission denied)"
+                            echo "  [WARNING]  Could not update SELinux context with chcon (permission denied)"
                             echo "      Manual fix required: sudo chcon -t container_file_t ${nginx_conf_file}"
                         fi
                     else
-                        echo "  ⚠️  chcon command not found. Cannot auto-fix SELinux context."
+                        echo "  [WARNING]  chcon command not found. Cannot auto-fix SELinux context."
                         echo "      Manual fix required: sudo chcon -t container_file_t ${nginx_conf_file}"
                     fi
                 fi
             fi
             
             echo ""
-            echo "  ℹ️  For Podman rootless with SELinux, the volume mount will use :Z flag"
+            echo "  [INFO]  For Podman rootless with SELinux, the volume mount will use :Z flag"
             echo "     to automatically relabel the file. If issues persist, run:"
             echo "       sudo chcon -t container_file_t ${nginx_conf_file}"
             echo "     Or use the provided helper script: ./fix-nginx-selinux.sh"
         else
-            echo "  ✓ SELinux is disabled, no context issues expected"
+            echo "  [ok] SELinux is disabled, no context issues expected"
         fi
     else
-        echo "  ℹ️  SELinux tools not detected (getenforce not found)"
+        echo "  [INFO]  SELinux tools not detected (getenforce not found)"
         echo "     If you're on a system with SELinux, ensure it's installed"
     fi
     
