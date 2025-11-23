@@ -682,9 +682,8 @@ setup_system() {
     # --- Start Services (Using run_service function) ---
     # --------------------------------------------------
     for SERVICE in "${SERVICE_NAMES[@]}"; do
-        # Nginx always starts (it's the entry point for all services)
+        # Skip nginx for now - it will be started last after all upstream services
         if [ "$SERVICE" == "nginx" ]; then
-            run_service "$SERVICE" "${SERVICE_CMDS[$SERVICE]}"
             continue
         fi
         
@@ -708,6 +707,12 @@ setup_system() {
         fi
         run_service "$SERVICE" "${SERVICE_CMDS[$SERVICE]}"
     done
+    
+    # Start nginx last, after all upstream services are running
+    # This prevents "host not found in upstream" errors
+    echo ""
+    echo "Starting nginx (reverse proxy) after all upstream services..."
+    run_service "nginx" "${SERVICE_CMDS[nginx]}"
 
     echo ""
     echo "[3/3] Finalizing Setup..."
