@@ -130,6 +130,26 @@ After completing the manual configuration in `secrets.env`, run the setup again:
 
 This will start all configured services based on your first-run choices.
 
+**Container Auto-Restart on Reboot:**
+
+All containers are configured with the `--restart unless-stopped` policy. This means:
+* Containers will automatically restart if they crash or exit unexpectedly
+* Containers will automatically start when the system reboots (as long as the Podman service/socket is enabled)
+* Containers will NOT restart if you manually stop them with `podman stop` or `./startup.sh breakdown`
+
+To enable Podman to start containers at boot, ensure the Podman service is enabled. On most systems, this is automatic, but you can verify with:
+
+```bash
+systemctl --user status podman.socket
+```
+
+If it's not enabled, you can enable it with:
+
+```bash
+systemctl --user enable podman.socket
+systemctl --user start podman.socket
+```
+
 ### 5. Additional Operations
 
 **Breakdown (Stop and Remove Containers)**
@@ -290,3 +310,46 @@ podman logs <service_name>
 ```
 
 * **Zigbee Adapter:** If zigbee2mqtt fails, ensure the `ZIGBEE_DEVICE_PATH` is correct and that the host user has the necessary permissions.
+
+* **Port 80 Permission Error (Rootless Podman):** If you encounter a permission error when starting the nginx container (attempting to bind to port 80), this is because ports below 1024 are considered "privileged ports" and normally require root access. When running Podman in rootless mode (as a non-root user), you may see an error like:
+
+```
+Error: rootlessport cannot expose privileged port 80, you can add 'net.ipv4.ip_unprivileged_port_start=80' to /etc/sysctl.conf (currently 1024), or choose a larger port number (>= 1024)
+```
+
+**Workaround Steps:**
+
+1. Edit the sysctl configuration file to allow unprivileged users to bind to port 80:
+   ```bash
+   sudo nano /etc/sysctl.conf
+   ```
+
+2. Add the following line at the end of the file:
+   ```
+   net.ipv4.ip_unprivileged_port_start=80
+   ```
+
+3. Apply the changes:
+   ```bash
+   sudo sysctl -p
+   ```
+
+4. Retry starting the container:
+   ```bash
+   ./startup.sh
+   ```
+
+**Security Implications:**
+
+Allowing unprivileged users to bind to privileged ports (ports < 1024) reduces a traditional security boundary in Unix-like systems. Historically, only root could bind to these ports, which prevented non-root processes from impersonating system services.
+
+**When to use this workaround:**
+* ✅ **Recommended for:** Single-user systems, home lab environments, personal IoT setups
+* ✅ **Safe when:** You trust all users on the system and understand the security tradeoff
+* ⚠️ **Use with caution in:** Multi-user environments or systems where additional security isolation is needed
+* ❌ **Not recommended for:** Production servers with untrusted users or strict security requirements
+
+**Alternative approaches:**
+* Run nginx on a higher port (e.g., 8080) and use port forwarding at the router/firewall level
+* Use a reverse proxy running as root that forwards to your rootless containers
+* Run containers with `podman` in rootful mode (requires root privileges)
