@@ -1,0 +1,40 @@
+# DoubleTake Configuration for CompreFace Integration
+# This file is mounted into the Double-Take container to configure it
+
+detectors:
+  compreface:
+    url: http://compreface:8080
+    key: ${COMPREFACE_API_KEY}
+    # Timeout for CompreFace API requests (ms)
+    timeout: 15000
+    # Detection confidence threshold (0-100)
+    det_prob_threshold: 0.8
+    # Recognition confidence threshold (0-1)
+    threshold: 0.6
+
+# MQTT configuration for integration with Frigate
+mqtt:
+  host: mosquitto
+  username: ${MQTT_USER}
+  password: ${MQTT_PASSWORD}
+
+# Frigate integration
+frigate:
+  url: http://frigate:5000
+  update_sub_labels: true
+  stop_on_match: true
+  min_area: 10000
+
+notify:
+  gotify:
+    enabled: false
+  mqtt:
+    enabled: true
+    
+# Time settings
+time:
+  timezone: ${TZ}
+
+# Storage settings
+storage:
+  path: /.storage

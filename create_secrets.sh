@@ -42,6 +42,8 @@ sed -e "
     /^GRAFANA_ADMIN_PASSWORD=/c\GRAFANA_ADMIN_PASSWORD=$(generate_random_string)
     /^GRAFANA_SECRET_KEY=/c\GRAFANA_SECRET_KEY=$(generate_random_string)
     /^SMB_PASS=/c\SMB_PASS=$(generate_random_string)
+    /^COMPREFACE_API_KEY=/c\COMPREFACE_API_KEY=$(generate_random_string)
+    /^POSTGRES_PASSWORD=/c\POSTGRES_PASSWORD=$(generate_random_string)
 " "$ENV_EXAMPLE_FILE" > "$TEMP_FILE"
 
 # The 'c\' command in sed completely replaces the line with the specified string.

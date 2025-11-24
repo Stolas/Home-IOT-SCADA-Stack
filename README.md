@@ -10,7 +10,7 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 * **Host OS:** Optimized for **openSUSE Leap Micro** (or other transactional OS) for enhanced stability and rollback capability.
 * **Container Runtime:** Uses **Podman** for managing containers, networks, and persistent volumes.
-* **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate with Double-Take facial recognition), and **Zigbee Gateway** (Zigbee2MQTT).
+* **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate with Double-Take facial recognition using CompreFace), and **Zigbee Gateway** (Zigbee2MQTT).
 * **Reverse Proxy:** Nginx-based reverse proxy with hostname-based routing for all services, including openSUSE Cockpit web console. Nginx configuration is dynamically generated based on running services to prevent startup failures.
 * **Security:** Uses `create_secrets.sh` to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
 * **External Storage:** Includes logic to mount an **SMB/CIFS** share for Frigate recordings on the host machine.
@@ -92,7 +92,7 @@ The script will ask you to choose between:
 
 1. **IoT/SCADA Stack only** - Includes: Mosquitto (MQTT Broker), InfluxDB (Time Series Database), Grafana (Visualization), Node-RED (Automation), and Zigbee2MQTT (Zigbee Gateway)
 
-2. **NVR only** - Includes: Frigate (Network Video Recorder for camera management and object detection) and Double-Take (facial recognition)
+2. **NVR only** - Includes: Frigate (Network Video Recorder for camera management and object detection), Double-Take (facial recognition), and CompreFace (face detection service)
 
 3. **Both IoT/SCADA Stack + NVR** - Includes all services from both options above
 
@@ -112,7 +112,7 @@ PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
 ```
 
 * Other site-specific variables like `TZ` (timezone), `SMB_SERVER`, `SMB_SHARE`, `SMB_USER` (if using NVR), etc.
-* Nginx reverse proxy hostnames: `BASE_DOMAIN`, `GRAFANA_HOSTNAME`, `FRIGATE_HOSTNAME`, `NODERED_HOSTNAME`, `ZIGBEE2MQTT_HOSTNAME`, `COCKPIT_HOSTNAME`, `DOUBLETAKE_HOSTNAME`
+* Nginx reverse proxy hostnames: `BASE_DOMAIN`, `GRAFANA_HOSTNAME`, `FRIGATE_HOSTNAME`, `NODERED_HOSTNAME`, `ZIGBEE2MQTT_HOSTNAME`, `COCKPIT_HOSTNAME`, `DOUBLETAKE_HOSTNAME`, `COMPREFACE_HOSTNAME`
 
 ### 3. Configure Frigate (NVR Only)
 
@@ -120,7 +120,33 @@ If you selected the NVR option, you need to configure Frigate:
 
 * Edit the `frigate_config.yml` file to define your cameras and settings.
 
-### 4. Run the Stack
+### 4. Configure CompreFace and Double-Take (NVR Only)
+
+If you selected the NVR option, the stack includes **CompreFace** for face detection, which integrates with **Double-Take** for facial recognition:
+
+**CompreFace Setup:**
+
+1. After running `./startup.sh`, CompreFace will be accessible at `http://compreface.<BASE_DOMAIN>` or `http://<host_ip>:8000`
+2. On first access, you'll need to create an admin account through the CompreFace web interface
+3. After logging in, create an API key:
+   - Go to the CompreFace dashboard
+   - Create a new application (e.g., "DoubleTake")
+   - Create a new recognition service within that application
+   - Copy the API key for the recognition service
+4. Update the `COMPREFACE_API_KEY` in your `secrets.env` file with the API key you just created
+5. Restart the Double-Take container: `./startup.sh start doubletake`
+
+**Double-Take Configuration:**
+
+Double-Take is pre-configured to work with CompreFace. Once CompreFace is set up with a valid API key, Double-Take will automatically use it for face detection. You can:
+
+- Access Double-Take at `http://doubletake.<BASE_DOMAIN>` or `http://<host_ip>:3001`
+- Add face images through the Double-Take interface to train recognition
+- Configure detection settings and notifications as needed
+
+**Note:** CompreFace requires approximately 2-4GB of RAM. Ensure your system meets the 8GB minimum requirement for NVR mode.
+
+### 5. Run the Stack
 
 After completing the manual configuration in `secrets.env`, run the setup again:
 
@@ -169,7 +195,7 @@ To troubleshoot or manually start a specific service:
 # Example: ./startup.sh start zigbee2mqtt
 ```
 
-Available service names: `mosquitto`, `influxdb`, `zigbee2mqtt`, `frigate`, `grafana`, `nodered`, `nginx`, `doubletake`.
+Available service names: `mosquitto`, `influxdb`, `zigbee2mqtt`, `frigate`, `grafana`, `nodered`, `nginx`, `doubletake`, `compreface`, `compreface_postgres`.
 
 **Changing Stack Configuration**
 
@@ -226,7 +252,7 @@ SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doub
 If you want the service to be properly cleaned up when running `./startup.sh breakdown`, add it to the `CONTAINER_NAMES` array in the `breakdown_containers_only()` function (around line 445):
 
 ```bash
-CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake" "codesysgateway")
+CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake" "compreface" "compreface_postgres" "codesysgateway")
 ```
 
 ### Step 3: (Optional) Configure Nginx Proxy
@@ -272,6 +298,7 @@ podman logs codesysgateway
 | **Grafana** | Data Visualization (SCADA UI) | http://grafana.&lt;BASE_DOMAIN&gt; or :3000 | IoT/SCADA modes only |
 | **Frigate** | NVR and Object Detection | http://frigate.&lt;BASE_DOMAIN&gt; or :5000 | NVR modes only |
 | **Double-Take** | Facial Recognition for Frigate | http://doubletake.&lt;BASE_DOMAIN&gt; or :3001 | NVR modes only |
+| **CompreFace** | Face Detection Service | http://compreface.&lt;BASE_DOMAIN&gt; or :8000 | NVR modes only, used by Double-Take |
 | **Node-RED** | Flow-Based Automation | http://nodered.&lt;BASE_DOMAIN&gt; or :1880 | IoT/SCADA modes only |
 | **Zigbee2MQTT** | Zigbee Device Control | http://zigbee.&lt;BASE_DOMAIN&gt; or :8080 | IoT/SCADA modes only |
 | **Cockpit** | openSUSE Web Console | http://cockpit.&lt;BASE_DOMAIN&gt; | Requires Cockpit enabled on host |
