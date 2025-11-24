@@ -8,9 +8,11 @@
 #
 # USAGE: 
 #   chmod +x startup.sh
-#   ./startup.sh         # DEFAULT: Stops existing, and starts all systems
+#   ./startup.sh              # DEFAULT: Stops existing, and starts all systems
+#   ./startup.sh setup        # Same as default - stops existing and starts all
 #   ./startup.sh start <service_name> # Start a specific service manually
-#   ./startup.sh breakdown # To stop and remove all systems and unmount SMB
+#   ./startup.sh breakdown    # Stop and remove all containers, unmount SMB (keeps volumes)
+#   ./startup.sh nuke         # DESTRUCTIVE: Stop containers, remove ALL volumes, unmount SMB
 # -----------------------------------------------------------------------------
 # Removed set -e: The script will now continue execution after failed commands.
 
@@ -1179,6 +1181,64 @@ breakdown_system() {
     echo "System Breakdown Complete (Persistent volumes and network were kept)."
 }
 
+# --- Nuke function: Complete removal of containers, volumes, and SMB share ---
+nuke_system() {
+    echo ""
+    echo "================================================================"
+    echo "                    *** WARNING ***                             "
+    echo "================================================================"
+    echo "This operation will PERMANENTLY DELETE all data including:"
+    echo "  - All containers"
+    echo "  - All volumes (mosquitto_data, frigate_data, nodered_data, etc.)"
+    echo "  - All stored configurations, recordings, and databases"
+    echo "  - SMB share unmount"
+    echo ""
+    echo "THIS CANNOT BE UNDONE!"
+    echo "================================================================"
+    echo ""
+    echo -n "Are you sure you want to proceed? Type 'YES' to confirm: "
+    read -r confirmation
+    
+    if [ "$confirmation" != "YES" ]; then
+        echo "Operation cancelled. No changes were made."
+        exit 0
+    fi
+    
+    echo ""
+    echo "Starting nuclear cleanup..."
+    echo ""
+    
+    # Stop and remove all containers
+    echo "[1/3] Stopping and removing all containers..."
+    breakdown_containers_only
+    
+    # Remove all volumes
+    echo ""
+    echo "[2/3] Removing all volumes..."
+    for vol in "${VOLUME_LIST[@]}"; do
+        if podman volume exists "${vol}" 2>/dev/null; then
+            echo "Removing volume: ${vol}"
+            if ! podman volume rm "${vol}"; then
+                echo "WARNING: Could not remove volume ${vol}"
+            fi
+        else
+            echo "Volume ${vol} does not exist. Skipping."
+        fi
+    done
+    
+    # Unmount SMB share
+    echo ""
+    echo "[3/3] Unmounting SMB share..."
+    unmount_smb_share
+    
+    echo ""
+    echo "================================================================"
+    echo "Nuclear cleanup complete!"
+    echo "All containers and volumes have been removed."
+    echo "To start fresh, run: ./startup.sh"
+    echo "================================================================"
+}
+
 
 # --- Main Execution ---
 case "$1" in
@@ -1188,6 +1248,9 @@ case "$1" in
     breakdown)
         breakdown_system
         ;;
+    nuke)
+        nuke_system
+        ;;
     start)
         if [ -z "$2" ]; then
             echo "ERROR: 'start' command requires a service name (e.g., ./startup.sh start mosquitto)."
@@ -1196,8 +1259,11 @@ case "$1" in
         start_manual_service "$2"
         ;;
     *)
-        echo "Usage: $0 {setup|breakdown|start <service_name>}"
-        echo "       (Running without arguments defaults to setup)"
+        echo "Usage: $0 {setup|breakdown|nuke|start <service_name>}"
+        echo "       setup     - (Default) Stops existing and starts all systems"
+        echo "       breakdown - Stops and removes containers, keeps volumes"
+        echo "       nuke      - DESTRUCTIVE: Removes containers AND all volumes"
+        echo "       start     - Manually start a specific service"
         exit 1
         ;;
 esac
