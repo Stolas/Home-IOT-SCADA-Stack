@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home IoT SCADA Stack</title>
+    <title>Home IoT/SCADA Stack</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
                     <text x="10" y="35" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#009639">nginx</text>
                 </svg>
             </div>
-            <h1>Home IoT SCADA Stack</h1>
+            <h1>Home IoT/SCADA Stack</h1>
             <p class="subtitle">Containerized IoT & Home Automation Platform</p>
         </header>
 
@@ -56,7 +56,7 @@
 
         <footer>
             <p>Powered by <strong>nginx</strong> | Running on <strong>Podman</strong></p>
-            <p class="footer-note">Home IoT SCADA Stack</p>
+            <p class="footer-note">Home IoT/SCADA Stack</p>
         </footer>
     </div>
 </body>
