@@ -9,11 +9,6 @@
 <body>
     <div class="container">
         <header>
-            <div class="logo-section">
-                <svg class="nginx-logo" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
-                    <text x="10" y="35" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#009639">nginx</text>
-                </svg>
-            </div>
             <h1>Home IoT/SCADA Stack</h1>
             <p class="subtitle">Containerized IoT & Home Automation Platform</p>
         </header>
