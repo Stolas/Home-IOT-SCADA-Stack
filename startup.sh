@@ -945,7 +945,7 @@ SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --n
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 # Note: Node-RED command is built dynamically by build_nodered_command() based on socket availability
 SERVICE_CMDS[nodered]=""  # Will be populated dynamically during startup
-SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v ${PWD}/nginx:/usr/share/nginx/html:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
 
 SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
