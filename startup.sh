@@ -30,6 +30,9 @@ VOLUME_LIST=(
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
+# Global variables for podman socket detection (populated by detect_podman_socket function)
+DETECTED_PODMAN_SOCKET=""
+PODMAN_SOCKET_AVAILABLE="false"
 
 echo "--- IoT SCADA Stack Management Script (Resilient Raw Podman) ---"
 echo "Using environment file: ${ENV_FILE}"
@@ -44,6 +47,94 @@ fi
 read_var() {
     # The grep command handles the reading, removing potential leading/trailing spaces
     grep "^${1}=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '[:space:]'
+}
+
+# ----------------------------------------------------------------------
+# --- PODMAN SOCKET DETECTION AND VALIDATION ---
+# ----------------------------------------------------------------------
+
+# --- Function to detect and validate the podman socket for the current user ---
+# This function implements resilient socket detection to prevent Node-RED from crashing
+# if the socket is missing or inaccessible.
+detect_podman_socket() {
+    echo ""
+    echo "--- Podman Socket Detection ---"
+    
+    # Read the PODMAN_SOCKET_PATH from secrets.env if it exists
+    local configured_socket=$(read_var PODMAN_SOCKET_PATH 2>/dev/null || echo "")
+    
+    # Common socket paths to check (in priority order)
+    # 1. User-provided path from secrets.env
+    # 2. Rootless socket for current user (most common on modern systems)
+    # 3. Rootful system socket (less common for home setups)
+    local socket_candidates=()
+    
+    if [ -n "$configured_socket" ]; then
+        socket_candidates+=("$configured_socket")
+    fi
+    
+    # Dynamically detect rootless socket path for current user
+    local current_user_uid=$(id -u)
+    local rootless_socket="/run/user/${current_user_uid}/podman/podman.sock"
+    socket_candidates+=("$rootless_socket")
+    
+    # Add common rootful socket path
+    socket_candidates+=("/run/podman/podman.sock")
+    
+    echo "Searching for podman socket in the following locations:"
+    for candidate in "${socket_candidates[@]}"; do
+        echo "  - ${candidate}"
+    done
+    echo ""
+    
+    # Try each candidate socket and validate it
+    for socket_path in "${socket_candidates[@]}"; do
+        # Check if the socket file exists
+        if [ ! -e "$socket_path" ]; then
+            echo "  [SKIP] Socket not found: ${socket_path}"
+            continue
+        fi
+        
+        # Check if it's actually a socket file (not a regular file or directory)
+        if [ ! -S "$socket_path" ]; then
+            echo "  [SKIP] Not a socket: ${socket_path}"
+            continue
+        fi
+        
+        # Check if the socket is readable (basic permission check)
+        if [ ! -r "$socket_path" ]; then
+            echo "  [SKIP] Socket not readable: ${socket_path}"
+            continue
+        fi
+        
+        # More robust permission check: try to stat the socket
+        # This catches cases where -r passes but actual access fails
+        if ! stat "$socket_path" >/dev/null 2>&1; then
+            echo "  [SKIP] Socket not accessible (permission denied): ${socket_path}"
+            continue
+        fi
+        
+        # Socket exists, is a socket type, and is accessible - this is our winner!
+        echo "  [SUCCESS] Found valid podman socket: ${socket_path}"
+        echo ""
+        
+        # Export the detected socket path for use by other functions
+        DETECTED_PODMAN_SOCKET="$socket_path"
+        PODMAN_SOCKET_AVAILABLE="true"
+        return 0
+    done
+    
+    # No valid socket found
+    echo "  [WARNING] No valid podman socket detected."
+    echo "  Node-RED will start WITHOUT podman/docker integration."
+    echo "  To enable podman integration, ensure the podman socket is available:"
+    echo "    - For rootless: systemctl --user enable --now podman.socket"
+    echo "    - For rootful:  systemctl enable --now podman.socket"
+    echo ""
+    
+    DETECTED_PODMAN_SOCKET=""
+    PODMAN_SOCKET_AVAILABLE="false"
+    return 1
 }
 
 # --- Read variables for services and SMB mount ---
@@ -818,6 +909,33 @@ run_service() {
     fi
 }
 
+# ----------------------------------------------------------------------
+# --- DYNAMIC SERVICE COMMAND BUILDER ---
+# ----------------------------------------------------------------------
+
+# --- Function to build Node-RED command with or without socket mounting ---
+# This function ensures Node-RED starts successfully even if the podman socket is missing.
+# Decision path:
+#   1. If socket detected and available -> mount it for full Docker/Podman integration
+#   2. If socket missing or not usable -> start Node-RED without socket (limited functionality but no crash)
+build_nodered_command() {
+    local base_cmd="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root"
+    
+    # If podman socket is available, add socket mounting and DOCKER_HOST environment variable
+    # Use strict validation to prevent empty or invalid socket paths from being used
+    if [ "$PODMAN_SOCKET_AVAILABLE" == "true" ] && [ -n "$DETECTED_PODMAN_SOCKET" ] && [ -e "$DETECTED_PODMAN_SOCKET" ]; then
+        echo "  [INFO] Node-RED will start with Podman socket integration: ${DETECTED_PODMAN_SOCKET}" >&2
+        base_cmd="${base_cmd} -e DOCKER_HOST=unix:///var/run/docker.sock -v ${DETECTED_PODMAN_SOCKET}:/var/run/docker.sock:ro"
+    else
+        echo "  [INFO] Node-RED will start WITHOUT Podman socket integration (limited functionality)" >&2
+    fi
+    
+    # Add the container image at the end
+    base_cmd="${base_cmd} docker.io/nodered/node-red:latest"
+    
+    echo "$base_cmd"
+}
+
 # --- Service Definitions (For run_service and manual starts) ---
 declare -A SERVICE_CMDS
 SERVICE_CMDS[mosquitto]="podman run -d --name mosquitto --restart unless-stopped --network ${NETWORK_NAME} -p 1883:1883 -p 9001:9001 -v mosquitto_data:/mosquitto/data -v ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro docker.io/eclipse-mosquitto:latest"
@@ -825,8 +943,10 @@ SERVICE_CMDS[influxdb]="podman run -d --name influxdb --restart unless-stopped -
 SERVICE_CMDS[zigbee2mqtt]="podman run -d --name zigbee2mqtt --restart unless-stopped --network ${NETWORK_NAME} -p 8080:8080 -e MQTT_SERVER=mqtt://mosquitto -e MQTT_USER=${MQTT_USER} -e MQTT_PASSWORD=${MQTT_PASSWORD} -e TZ=${TZ} -v z2m_data:/app/data --device ${ZIGBEE_DEVICE_PATH}:/dev/zigbee --cap-add NET_ADMIN --cap-add SYS_ADMIN docker.io/koenkk/zigbee2mqtt:latest"
 SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --network ${NETWORK_NAME} --privileged -e TZ=${TZ} -p ${FRIGATE_PORT}:5000/tcp -p 1935:1935 -v ${FRIGATE_RECORDINGS_HOST_PATH}:/media/frigate:rw -v ./frigate_config.yml:/config/config.yml:ro -v /etc/localtime:/etc/localtime:ro --shm-size 256m ghcr.io/blakeblackshear/frigate:stable"
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
-SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
-SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v ${PWD}/nginx/index.html:/usr/share/nginx/html/index.html:ro -v ${PWD}/nginx/style.css:/usr/share/nginx/html/style.css:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+# Note: Node-RED command is built dynamically by build_nodered_command() based on socket availability
+SERVICE_CMDS[nodered]=""  # Will be populated dynamically during startup
+SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+
 SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
 
@@ -858,6 +978,19 @@ start_manual_service() {
         
         # Ensure the network is up (critical prerequisite)
         podman network exists "${NETWORK_NAME}" || podman network create "${NETWORK_NAME}"
+        
+        # If starting Node-RED manually, detect socket and build command dynamically
+        if [ "$SERVICE_NAME" == "nodered" ]; then
+            detect_podman_socket
+            SERVICE_CMDS[nodered]=$(build_nodered_command)
+            
+            # Fallback: If command building somehow failed, use a minimal safe command
+            if [ -z "${SERVICE_CMDS[nodered]}" ]; then
+                echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
+                SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+            fi
+        fi
+        
         # Only mount SMB if the service needs it (i.e., frigate)
         if [ "$SERVICE_NAME" == "frigate" ]; then
             mount_smb_share
@@ -881,6 +1014,20 @@ setup_system() {
     
     # Check for first run and handle configuration
     check_first_run
+    
+    # Detect and validate podman socket before starting services
+    # This prevents Node-RED from crashing if socket is missing
+    detect_podman_socket
+    
+    # Build Node-RED command dynamically based on socket availability
+    # This must be done after socket detection and before services start
+    SERVICE_CMDS[nodered]=$(build_nodered_command)
+    
+    # Fallback: If command building somehow failed, use a minimal safe command
+    if [ -z "${SERVICE_CMDS[nodered]}" ]; then
+        echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
+        SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+    fi
     
     # Get the stack configuration
     local stack_type=$(read_stack_config)

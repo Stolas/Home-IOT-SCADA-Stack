@@ -15,6 +15,7 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 * **Security:** Uses `create_secrets.sh` to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
 * **External Storage:** Includes logic to mount an **SMB/CIFS** share for Frigate recordings on the host machine.
 * **Resilience:** The `startup.sh` script continues running even if individual service starts fail, providing a complete status report. Nginx automatically adapts to only proxy running services.
+* **Automatic Podman Socket Detection:** Node-RED automatically detects and uses the podman socket for docker/container integration. If the socket is unavailable, Node-RED starts in standalone mode without crashing.
 
 ## System Requirements
 
@@ -105,12 +106,10 @@ The script will ask you to choose between:
 After the automatic setup, you must manually edit the `secrets.env` file to configure:
 
 * `ZIGBEE_DEVICE_PATH` - Update with the path to your Zigbee adapter (e.g., `/dev/ttyACM0` or `/dev/serial/by-id/...`)
-* `PODMAN_SOCKET_PATH` - Update for Node-RED integration. On modern Podman/Leap Micro systems, this is typically:
-
-```bash
-PODMAN_SOCKET_PATH=/run/user/$(id -u)/podman/podman.sock
-```
-
+* `PODMAN_SOCKET_PATH` - **OPTIONAL** for Node-RED integration. The startup script automatically detects the podman socket for the current user. If you need to specify a custom path, uncomment and update this variable. Common paths:
+  * Rootless (recommended): `/run/user/$(id -u)/podman/podman.sock`
+  * Rootful: `/run/podman/podman.sock`
+  * **Note**: If the socket is not found, Node-RED will still start successfully but without podman/docker integration capabilities.
 * Other site-specific variables like `TZ` (timezone), `SMB_SERVER`, `SMB_SHARE`, `SMB_USER` (if using NVR), etc.
 * Nginx reverse proxy hostnames: `BASE_DOMAIN`, `GRAFANA_HOSTNAME`, `FRIGATE_HOSTNAME`, `NODERED_HOSTNAME`, `ZIGBEE2MQTT_HOSTNAME`, `COCKPIT_HOSTNAME`, `DOUBLETAKE_HOSTNAME`
 
