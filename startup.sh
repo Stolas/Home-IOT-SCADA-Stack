@@ -27,6 +27,8 @@ VOLUME_LIST=(
     "influxdb_data"
     "nginx_cache"
     "doubletake_data"
+    "compreface_db_data"
+    "compreface_data"
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
@@ -75,6 +77,12 @@ NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
 ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
 COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
 DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
+COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME)
+COMPREFACE_PORT=$(read_var COMPREFACE_PORT)
+COMPREFACE_API_KEY=$(read_var COMPREFACE_API_KEY)
+POSTGRES_USER=$(read_var POSTGRES_USER)
+POSTGRES_PASSWORD=$(read_var POSTGRES_PASSWORD)
+POSTGRES_DB=$(read_var POSTGRES_DB)
 
 
 # ----------------------------------------------------------------------
@@ -410,6 +418,31 @@ NGINX_EOF
         echo "  [INFO] Double-Take is not running - skipping from nginx config"
     fi
     
+    # Check and add CompreFace if running
+    if echo "$running_services" | grep -q "^compreface$"; then
+        echo "  [ok] CompreFace is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # CompreFace (Face Detection Service)
+    server {
+        listen 80;
+        server_name ${COMPREFACE_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://compreface:8080;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            client_max_body_size 10M;
+        }
+    }
+NGINX_EOF
+        services_html+="<li><a href=\"http://${COMPREFACE_HOSTNAME}.${BASE_DOMAIN}\">CompreFace</a></li>"
+    else
+        echo "  [INFO] CompreFace is not running - skipping from nginx config"
+    fi
+    
     # Check and add InfluxDB if running
     if echo "$running_services" | grep -q "^influxdb$"; then
         echo "  [ok] InfluxDB is running (available on port 8086)"
@@ -637,6 +670,12 @@ check_first_run() {
             ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
             COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
             DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
+            COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME)
+            COMPREFACE_PORT=$(read_var COMPREFACE_PORT)
+            COMPREFACE_API_KEY=$(read_var COMPREFACE_API_KEY)
+            POSTGRES_USER=$(read_var POSTGRES_USER)
+            POSTGRES_PASSWORD=$(read_var POSTGRES_PASSWORD)
+            POSTGRES_DB=$(read_var POSTGRES_DB)
         fi
     fi
 }
@@ -695,7 +734,7 @@ mount_smb_share() {
 # --- Breakdown function: Stop and Remove all containers (KEEP volumes) ---
 breakdown_containers_only() {
     echo "Stopping and removing containers..."
-    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake")
+    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake" "compreface" "compreface_postgres")
     
     for name in "${CONTAINER_NAMES[@]}"; do
         if podman ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
@@ -747,8 +786,10 @@ SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --n
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
 SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
-SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
+SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} -e DETECTORS__COMPREFACE__URL=http://compreface:8080 -e DETECTORS__COMPREFACE__KEY=${COMPREFACE_API_KEY} -e MQTT__HOST=mosquitto -e MQTT__USERNAME=${MQTT_USER} -e MQTT__PASSWORD=${MQTT_PASSWORD} -e FRIGATE__URL=http://frigate:5000 docker.io/jakowenko/double-take:latest"
+SERVICE_CMDS[compreface_postgres]="podman run -d --name compreface_postgres --restart unless-stopped --network ${NETWORK_NAME} -v compreface_db_data:/var/lib/postgresql/data -e POSTGRES_USER=${POSTGRES_USER} -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} -e POSTGRES_DB=${POSTGRES_DB} docker.io/library/postgres:15"
+SERVICE_CMDS[compreface]="podman run -d --name compreface --restart unless-stopped --network ${NETWORK_NAME} -p ${COMPREFACE_PORT}:8080 -v compreface_data:/home/app/frs -e POSTGRES_USER=${POSTGRES_USER} -e POSTGRES_PASSWORD=${POSTGRES_PASSWORD} -e POSTGRES_URL=jdbc:postgresql://compreface_postgres:5432/${POSTGRES_DB} -e ENABLE_EMAIL_SERVER=false -e ADMIN_JAVA_OPTS=-Xmx4g -e MAX_FILE_SIZE=10MB -e MAX_REQUEST_SIZE=10MB docker.io/exadel/compreface:latest"
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake compreface_postgres compreface)
 
 # --- Manual Start Function ---
 start_manual_service() {
@@ -770,7 +811,19 @@ start_manual_service() {
             exit 1
         fi
         
-        if [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$stack_type" == "nvr_only" ]; then
+        if [ "$SERVICE_NAME" == "compreface" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "ERROR: CompreFace is not enabled in your configuration (IoT/SCADA only mode)."
+            echo "To enable CompreFace, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
+            exit 1
+        fi
+        
+        if [ "$SERVICE_NAME" == "compreface_postgres" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "ERROR: CompreFace PostgreSQL is not enabled in your configuration (IoT/SCADA only mode)."
+            echo "To enable CompreFace, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
+            exit 1
+        fi
+        
+        if [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$SERVICE_NAME" != "compreface" ] && [ "$SERVICE_NAME" != "compreface_postgres" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "ERROR: ${SERVICE_NAME} is not enabled in your configuration (NVR only mode)."
             echo "To enable IoT/SCADA services, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
             exit 1
@@ -853,8 +906,19 @@ setup_system() {
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
         fi
-        # Skip IoT services if stack type is nvr_only (but keep frigate and doubletake)
-        if [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$stack_type" == "nvr_only" ]; then
+        # Skip CompreFace and PostgreSQL if stack type is iot_only
+        if [ "$SERVICE" == "compreface" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "Skipping CompreFace (NVR not enabled in configuration)"
+            SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
+            continue
+        fi
+        if [ "$SERVICE" == "compreface_postgres" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "Skipping CompreFace PostgreSQL (NVR not enabled in configuration)"
+            SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
+            continue
+        fi
+        # Skip IoT services if stack type is nvr_only (but keep frigate, doubletake, compreface, and compreface_postgres)
+        if [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$SERVICE" != "compreface" ] && [ "$SERVICE" != "compreface_postgres" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "Skipping $SERVICE (IoT/SCADA not enabled in configuration)"
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
