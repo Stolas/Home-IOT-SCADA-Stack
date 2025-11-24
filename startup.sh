@@ -101,13 +101,20 @@ detect_podman_socket() {
             continue
         fi
         
-        # Check if the socket is readable
+        # Check if the socket is readable (basic permission check)
         if [ ! -r "$socket_path" ]; then
             echo "  [SKIP] Socket not readable: ${socket_path}"
             continue
         fi
         
-        # Socket exists, is a socket type, and is readable - this is our winner!
+        # More robust permission check: try to stat the socket
+        # This catches cases where -r passes but actual access fails
+        if ! stat "$socket_path" >/dev/null 2>&1; then
+            echo "  [SKIP] Socket not accessible (permission denied): ${socket_path}"
+            continue
+        fi
+        
+        # Socket exists, is a socket type, and is accessible - this is our winner!
         echo "  [SUCCESS] Found valid podman socket: ${socket_path}"
         echo ""
         
