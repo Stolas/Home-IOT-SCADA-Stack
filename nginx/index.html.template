@@ -44,7 +44,7 @@
                 <div class="info-card">
                     <h3>🛡️ Security</h3>
                     <p>Powered by Podman with automatic secret generation and hostname-based routing</p>
-                    <a href="https://github.com/Stolas/Home-IOT-SCADA-Stack#security" target="_blank" class="doc-link">Security Details</a>
+                    <a href="https://github.com/Stolas/Home-IOT-SCADA-Stack#features" target="_blank" class="doc-link">Security Details</a>
                 </div>
             </section>
         </main>
