@@ -273,8 +273,10 @@ NGINX_EOF
     services_html+="<span class=\"service-url\">${COCKPIT_HOSTNAME}.${BASE_DOMAIN}</span>"
     services_html+="</a>"
     
-    # Update the HTML file with the services list
+    # Copy template and update the HTML file with the services list
+    local html_template="./nginx/index.html.template"
     local html_file="./nginx/index.html"
+    cp "${html_template}" "${html_file}"
     sed -i "s|SERVICES_LIST|${services_html}|g" "${html_file}"
     
     echo "Nginx configuration generated at ${nginx_conf_file}"
@@ -516,8 +518,10 @@ NGINX_EOF
     services_html+="<span class=\"service-url\">${COCKPIT_HOSTNAME}.${BASE_DOMAIN}</span>"
     services_html+="</a>"
     
-    # Update the HTML file with the services list
+    # Copy template and update the HTML file with the services list
+    local html_template="./nginx/index.html.template"
     local html_file="./nginx/index.html"
+    cp "${html_template}" "${html_file}"
     sed -i "s|SERVICES_LIST|${services_html}|g" "${html_file}"
     
     echo "Nginx configuration generated at ${nginx_conf_file} based on running services"
