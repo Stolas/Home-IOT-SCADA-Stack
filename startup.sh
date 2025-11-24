@@ -30,6 +30,9 @@ VOLUME_LIST=(
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
+# Global variables for podman socket detection (populated by detect_podman_socket function)
+DETECTED_PODMAN_SOCKET=""
+PODMAN_SOCKET_AVAILABLE="false"
 
 echo "--- IoT SCADA Stack Management Script (Resilient Raw Podman) ---"
 echo "Using environment file: ${ENV_FILE}"
@@ -891,6 +894,12 @@ start_manual_service() {
         if [ "$SERVICE_NAME" == "nodered" ]; then
             detect_podman_socket
             SERVICE_CMDS[nodered]=$(build_nodered_command)
+            
+            # Fallback: If command building somehow failed, use a minimal safe command
+            if [ -z "${SERVICE_CMDS[nodered]}" ]; then
+                echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
+                SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+            fi
         fi
         
         # Only mount SMB if the service needs it (i.e., frigate)
@@ -924,6 +933,12 @@ setup_system() {
     # Build Node-RED command dynamically based on socket availability
     # This must be done after socket detection and before services start
     SERVICE_CMDS[nodered]=$(build_nodered_command)
+    
+    # Fallback: If command building somehow failed, use a minimal safe command
+    if [ -z "${SERVICE_CMDS[nodered]}" ]; then
+        echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
+        SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+    fi
     
     # Get the stack configuration
     local stack_type=$(read_stack_config)
