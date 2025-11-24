@@ -244,6 +244,257 @@ NGINX_EOF
     echo "Nginx configuration generated at ${nginx_conf_file}"
 }
 
+# --- Function to generate nginx config based on actually running services ---
+generate_nginx_config_from_running_services() {
+    local nginx_conf_file="./nginx/nginx.conf"
+    
+    echo "Checking which services are running and generating nginx configuration..."
+    
+    # Check which services are actually running
+    local running_services=$(podman ps --format '{{.Names}}' 2>/dev/null || echo "")
+    
+    # Start building the nginx config
+    cat > "${nginx_conf_file}" << 'NGINX_EOF'
+events {
+    worker_connections 1024;
+}
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    
+    sendfile on;
+    keepalive_timeout 65;
+    
+    # Logging
+    access_log /var/log/nginx/access.log;
+    error_log /var/log/nginx/error.log;
+    
+    # Default server - redirect to available services
+    server {
+        listen 80 default_server;
+        server_name _;
+        
+        location / {
+            return 200 '<html><head><title>Home IoT/SCADA Stack</title></head><body><h1>Home IoT/SCADA Stack</h1><ul>SERVICES_LIST</ul></body></html>';
+            add_header Content-Type text/html;
+        }
+    }
+NGINX_EOF
+
+    local services_html=""
+    
+    # Check and add Grafana if running
+    if echo "$running_services" | grep -q "^grafana$"; then
+        echo "  [ok] Grafana is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Grafana
+    server {
+        listen 80;
+        server_name ${GRAFANA_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://grafana:3000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
+NGINX_EOF
+        services_html+="<li><a href=\"http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}\">Grafana</a></li>"
+    else
+        echo "  [INFO] Grafana is not running - skipping from nginx config"
+    fi
+    
+    # Check and add Node-RED if running
+    if echo "$running_services" | grep -q "^nodered$"; then
+        echo "  [ok] Node-RED is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Node-RED
+    server {
+        listen 80;
+        server_name ${NODERED_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://nodered:1880;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+NGINX_EOF
+        services_html+="<li><a href=\"http://${NODERED_HOSTNAME}.${BASE_DOMAIN}\">Node-RED</a></li>"
+    else
+        echo "  [INFO] Node-RED is not running - skipping from nginx config"
+    fi
+    
+    # Check and add Zigbee2MQTT if running
+    if echo "$running_services" | grep -q "^zigbee2mqtt$"; then
+        echo "  [ok] Zigbee2MQTT is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Zigbee2MQTT
+    server {
+        listen 80;
+        server_name ${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://zigbee2mqtt:8080;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+NGINX_EOF
+        services_html+="<li><a href=\"http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}\">Zigbee2MQTT</a></li>"
+    else
+        echo "  [INFO] Zigbee2MQTT is not running - skipping from nginx config"
+    fi
+    
+    # Check and add Frigate if running
+    if echo "$running_services" | grep -q "^frigate$"; then
+        echo "  [ok] Frigate is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Frigate NVR
+    server {
+        listen 80;
+        server_name ${FRIGATE_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://frigate:5000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
+NGINX_EOF
+        services_html+="<li><a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\">Frigate NVR</a></li>"
+    else
+        echo "  [INFO] Frigate is not running - skipping from nginx config"
+    fi
+    
+    # Check and add Double-Take if running
+    if echo "$running_services" | grep -q "^doubletake$"; then
+        echo "  [ok] Double-Take is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # Double-Take (Facial Recognition for Frigate)
+    server {
+        listen 80;
+        server_name ${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://doubletake:3000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
+NGINX_EOF
+        services_html+="<li><a href=\"http://${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}\">Double-Take</a></li>"
+    else
+        echo "  [INFO] Double-Take is not running - skipping from nginx config"
+    fi
+    
+    # Check and add InfluxDB if running
+    if echo "$running_services" | grep -q "^influxdb$"; then
+        echo "  [ok] InfluxDB is running (available on port 8086)"
+    else
+        echo "  [INFO] InfluxDB is not running"
+    fi
+    
+    # Check and add Mosquitto if running
+    if echo "$running_services" | grep -q "^mosquitto$"; then
+        echo "  [ok] Mosquitto is running (available on port 1883)"
+    else
+        echo "  [INFO] Mosquitto is not running"
+    fi
+    
+    # Always add Cockpit (openSUSE web console) proxy - assuming it runs on host
+    cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # openSUSE Cockpit Web Console
+    server {
+        listen 80;
+        server_name ${COCKPIT_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass https://host.containers.internal:9090;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_ssl_verify off;
+        }
+    }
+}
+NGINX_EOF
+
+    services_html+="<li><a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\">openSUSE Cockpit</a></li>"
+    
+    # Update the services list in the default page
+    sed -i "s|SERVICES_LIST|${services_html}|g" "${nginx_conf_file}"
+    
+    echo "Nginx configuration generated at ${nginx_conf_file} based on running services"
+}
+
+# --- Function to check nginx.conf permissions ---
+check_and_fix_nginx_permissions() {
+    local nginx_conf_file="./nginx/nginx.conf"
+    
+    if [ ! -f "${nginx_conf_file}" ]; then
+        echo "WARNING: nginx.conf not found at ${nginx_conf_file}. It will be generated."
+        return 0
+    fi
+    
+    echo ""
+    echo "Checking nginx.conf permissions..."
+    
+    # Check file permissions
+    local file_perms=$(stat -c "%a" "${nginx_conf_file}" 2>/dev/null || stat -f "%OLp" "${nginx_conf_file}" 2>/dev/null)
+    local file_owner=$(stat -c "%u" "${nginx_conf_file}" 2>/dev/null || stat -f "%u" "${nginx_conf_file}" 2>/dev/null)
+    local current_uid=$(id -u)
+    
+    echo "  File permissions: ${file_perms}"
+    echo "  File owner UID: ${file_owner}"
+    echo "  Current user UID: ${current_uid}"
+    
+    # Warn if permissions are not 644 or more restrictive
+    if [ "${file_perms}" != "644" ] && [ "${file_perms}" != "444" ] && [ "${file_perms}" != "400" ] && [ "${file_perms}" != "600" ]; then
+        echo "  [WARNING] File permissions are ${file_perms}. Recommended: 644"
+        echo "      To fix: chmod 644 ${nginx_conf_file}"
+    else
+        echo "  [ok] File permissions are acceptable"
+    fi
+    
+    # Warn if file is not owned by current user
+    if [ "${file_owner}" != "${current_uid}" ]; then
+        echo "  [WARNING] File is owned by UID ${file_owner}, but current user is UID ${current_uid}"
+        echo "      To fix: chown ${current_uid} ${nginx_conf_file}"
+    else
+        echo "  [ok] File ownership is correct"
+    fi
+    
+    echo ""
+}
+
 
 # ----------------------------------------------------------------------
 # --- FIRST-RUN CONFIGURATION ---
@@ -495,7 +746,7 @@ SERVICE_CMDS[zigbee2mqtt]="podman run -d --name zigbee2mqtt --restart unless-sto
 SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --network ${NETWORK_NAME} --privileged -e TZ=${TZ} -p ${FRIGATE_PORT}:5000/tcp -p 1935:1935 -v ${FRIGATE_RECORDINGS_HOST_PATH}:/media/frigate:rw -v ./frigate_config.yml:/config/config.yml:ro -v /etc/localtime:/etc/localtime:ro --shm-size 256m ghcr.io/blakeblackshear/frigate:stable"
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
-SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 -v ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
 SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
 
@@ -564,9 +815,6 @@ setup_system() {
         mount_smb_share
     fi
     
-    # 3. Generate nginx configuration based on stack type
-    generate_nginx_config "$stack_type"
-    
     echo ""
     echo "[1/3] Setting up Podman Network and Volumes..."
 
@@ -588,9 +836,8 @@ setup_system() {
     # --- Start Services (Using run_service function) ---
     # --------------------------------------------------
     for SERVICE in "${SERVICE_NAMES[@]}"; do
-        # Nginx always starts (it's the entry point for all services)
+        # Skip nginx for now - it will be started last after all upstream services
         if [ "$SERVICE" == "nginx" ]; then
-            run_service "$SERVICE" "${SERVICE_CMDS[$SERVICE]}"
             continue
         fi
         
@@ -614,6 +861,24 @@ setup_system() {
         fi
         run_service "$SERVICE" "${SERVICE_CMDS[$SERVICE]}"
     done
+    
+    # Wait for services to stabilize before generating nginx config
+    echo ""
+    echo "Waiting 3 seconds for services to stabilize..."
+    sleep 3
+    
+    # Generate nginx config based on actually running services
+    # This prevents "host not found in upstream" errors for services that didn't start
+    echo ""
+    generate_nginx_config_from_running_services
+    
+    # Check and fix nginx.conf permissions
+    check_and_fix_nginx_permissions
+    
+    # Start nginx last, after all upstream services are running
+    echo ""
+    echo "Starting nginx (reverse proxy) after all upstream services..."
+    run_service "nginx" "${SERVICE_CMDS[nginx]}"
 
     echo ""
     echo "[3/3] Finalizing Setup..."
