@@ -133,7 +133,7 @@ If you selected the NVR option, the stack includes **CompreFace** for face detec
    - Create a new application (e.g., "DoubleTake")
    - Create a new recognition service within that application
    - Copy the API key for the recognition service
-4. Update the `COMPREFACE_API_KEY` in your `secrets.env` file with the API key you just created
+4. Update the `COMPREFACE_API_KEY` in your `secrets.env` file with the API key you just created (replace the auto-generated placeholder)
 5. Restart the Double-Take container: `./startup.sh start doubletake`
 
 **Double-Take Configuration:**
