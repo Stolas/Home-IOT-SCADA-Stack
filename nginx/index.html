@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Home IoT SCADA Stack</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo-section">
+                <svg class="nginx-logo" viewBox="0 0 200 50" xmlns="http://www.w3.org/2000/svg">
+                    <text x="10" y="35" font-family="Arial, sans-serif" font-size="32" font-weight="bold" fill="#009639">nginx</text>
+                </svg>
+            </div>
+            <h1>Home IoT SCADA Stack</h1>
+            <p class="subtitle">Containerized IoT & Home Automation Platform</p>
+        </header>
+
+        <main>
+            <section class="services-section">
+                <h2>Available Services</h2>
+                <div class="services-grid" id="services-grid">
+                    <!-- Services will be injected here by startup.sh -->
+                    SERVICES_LIST
+                </div>
+            </section>
+
+            <section class="info-section">
+                <div class="info-card">
+                    <h3>📚 Documentation</h3>
+                    <p>Access comprehensive documentation for setup and configuration</p>
+                    <a href="https://github.com/Stolas/Home-IOT-SCADA-Stack" target="_blank" class="doc-link">View Documentation</a>
+                </div>
+                
+                <div class="info-card">
+                    <h3>🔧 Features</h3>
+                    <ul class="features-list">
+                        <li>MQTT Broker (Mosquitto)</li>
+                        <li>Time Series Database (InfluxDB)</li>
+                        <li>Data Visualization (Grafana)</li>
+                        <li>Flow Automation (Node-RED)</li>
+                        <li>NVR & Object Detection (Frigate)</li>
+                        <li>Zigbee Gateway (Zigbee2MQTT)</li>
+                    </ul>
+                </div>
+                
+                <div class="info-card">
+                    <h3>🛡️ Security</h3>
+                    <p>Powered by Podman with automatic secret generation and hostname-based routing</p>
+                    <a href="https://github.com/Stolas/Home-IOT-SCADA-Stack#security" target="_blank" class="doc-link">Security Details</a>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Powered by <strong>nginx</strong> | Running on <strong>Podman</strong></p>
+            <p class="footer-note">Home IoT SCADA Stack</p>
+        </footer>
+    </div>
+</body>
+</html>

@@ -104,14 +104,21 @@ http {
     access_log /var/log/nginx/access.log;
     error_log /var/log/nginx/error.log;
     
-    # Default server - redirect to available services
+    # Default server - serve landing page
     server {
         listen 80 default_server;
         server_name _;
         
+        root /usr/share/nginx/html;
+        index index.html;
+        
         location / {
-            return 200 '<html><head><title>Home IoT/SCADA Stack</title></head><body><h1>Home IoT/SCADA Stack</h1><ul>SERVICES_LIST</ul></body></html>';
-            add_header Content-Type text/html;
+            try_files $uri $uri/ /index.html;
+        }
+        
+        location ~ \.(css|js|jpg|jpeg|png|gif|ico|svg)$ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
         }
     }
 NGINX_EOF
@@ -226,20 +233,49 @@ NGINX_EOF
 }
 NGINX_EOF
 
-    # Update the services list in the default page
+    # Update the services list in the landing page HTML
     local services_html=""
     if [ "$stack_type" == "iot_only" ] || [ "$stack_type" == "iot_nvr" ]; then
-        services_html+="<li><a href=\"http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}\">Grafana</a></li>"
-        services_html+="<li><a href=\"http://${NODERED_HOSTNAME}.${BASE_DOMAIN}\">Node-RED</a></li>"
-        services_html+="<li><a href=\"http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}\">Zigbee2MQTT</a></li>"
+        services_html+="<a href=\"http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Grafana</h3>"
+        services_html+="<p>Data visualization and monitoring dashboards</p>"
+        services_html+="<span class=\"service-url\">${GRAFANA_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
+        
+        services_html+="<a href=\"http://${NODERED_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Node-RED</h3>"
+        services_html+="<p>Flow-based automation and IoT integration</p>"
+        services_html+="<span class=\"service-url\">${NODERED_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
+        
+        services_html+="<a href=\"http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Zigbee2MQTT</h3>"
+        services_html+="<p>Zigbee device control and management</p>"
+        services_html+="<span class=\"service-url\">${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     fi
     if [ "$stack_type" == "nvr_only" ] || [ "$stack_type" == "iot_nvr" ]; then
-        services_html+="<li><a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\">Frigate NVR</a></li>"
-        services_html+="<li><a href=\"http://${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}\">Double-Take</a></li>"
+        services_html+="<a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Frigate NVR</h3>"
+        services_html+="<p>Network video recorder with object detection</p>"
+        services_html+="<span class=\"service-url\">${FRIGATE_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
+        
+        services_html+="<a href=\"http://${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Double-Take</h3>"
+        services_html+="<p>Facial recognition for Frigate</p>"
+        services_html+="<span class=\"service-url\">${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     fi
-    services_html+="<li><a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\">openSUSE Cockpit</a></li>"
+    services_html+="<a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+    services_html+="<h3>openSUSE Cockpit</h3>"
+    services_html+="<p>System management and monitoring console</p>"
+    services_html+="<span class=\"service-url\">${COCKPIT_HOSTNAME}.${BASE_DOMAIN}</span>"
+    services_html+="</a>"
     
-    sed -i "s|SERVICES_LIST|${services_html}|g" "${nginx_conf_file}"
+    # Update the HTML file with the services list
+    local html_file="./nginx/index.html"
+    sed -i "s|SERVICES_LIST|${services_html}|g" "${html_file}"
     
     echo "Nginx configuration generated at ${nginx_conf_file}"
 }
@@ -270,14 +306,21 @@ http {
     access_log /var/log/nginx/access.log;
     error_log /var/log/nginx/error.log;
     
-    # Default server - redirect to available services
+    # Default server - serve landing page
     server {
         listen 80 default_server;
         server_name _;
         
+        root /usr/share/nginx/html;
+        index index.html;
+        
         location / {
-            return 200 '<html><head><title>Home IoT/SCADA Stack</title></head><body><h1>Home IoT/SCADA Stack</h1><ul>SERVICES_LIST</ul></body></html>';
-            add_header Content-Type text/html;
+            try_files $uri $uri/ /index.html;
+        }
+        
+        location ~ \.(css|js|jpg|jpeg|png|gif|ico|svg)$ {
+            expires 30d;
+            add_header Cache-Control "public, immutable";
         }
     }
 NGINX_EOF
@@ -303,7 +346,11 @@ NGINX_EOF
         }
     }
 NGINX_EOF
-        services_html+="<li><a href=\"http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}\">Grafana</a></li>"
+        services_html+="<a href=\"http://${GRAFANA_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Grafana</h3>"
+        services_html+="<p>Data visualization and monitoring dashboards</p>"
+        services_html+="<span class=\"service-url\">${GRAFANA_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     else
         echo "  [INFO] Grafana is not running - skipping from nginx config"
     fi
@@ -330,7 +377,11 @@ NGINX_EOF
         }
     }
 NGINX_EOF
-        services_html+="<li><a href=\"http://${NODERED_HOSTNAME}.${BASE_DOMAIN}\">Node-RED</a></li>"
+        services_html+="<a href=\"http://${NODERED_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Node-RED</h3>"
+        services_html+="<p>Flow-based automation and IoT integration</p>"
+        services_html+="<span class=\"service-url\">${NODERED_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     else
         echo "  [INFO] Node-RED is not running - skipping from nginx config"
     fi
@@ -357,7 +408,11 @@ NGINX_EOF
         }
     }
 NGINX_EOF
-        services_html+="<li><a href=\"http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}\">Zigbee2MQTT</a></li>"
+        services_html+="<a href=\"http://${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Zigbee2MQTT</h3>"
+        services_html+="<p>Zigbee device control and management</p>"
+        services_html+="<span class=\"service-url\">${ZIGBEE2MQTT_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     else
         echo "  [INFO] Zigbee2MQTT is not running - skipping from nginx config"
     fi
@@ -381,7 +436,11 @@ NGINX_EOF
         }
     }
 NGINX_EOF
-        services_html+="<li><a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\">Frigate NVR</a></li>"
+        services_html+="<a href=\"http://${FRIGATE_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Frigate NVR</h3>"
+        services_html+="<p>Network video recorder with object detection</p>"
+        services_html+="<span class=\"service-url\">${FRIGATE_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     else
         echo "  [INFO] Frigate is not running - skipping from nginx config"
     fi
@@ -405,7 +464,11 @@ NGINX_EOF
         }
     }
 NGINX_EOF
-        services_html+="<li><a href=\"http://${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}\">Double-Take</a></li>"
+        services_html+="<a href=\"http://${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>Double-Take</h3>"
+        services_html+="<p>Facial recognition for Frigate</p>"
+        services_html+="<span class=\"service-url\">${DOUBLETAKE_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
     else
         echo "  [INFO] Double-Take is not running - skipping from nginx config"
     fi
@@ -447,10 +510,15 @@ NGINX_EOF
 }
 NGINX_EOF
 
-    services_html+="<li><a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\">openSUSE Cockpit</a></li>"
+    services_html+="<a href=\"http://${COCKPIT_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+    services_html+="<h3>openSUSE Cockpit</h3>"
+    services_html+="<p>System management and monitoring console</p>"
+    services_html+="<span class=\"service-url\">${COCKPIT_HOSTNAME}.${BASE_DOMAIN}</span>"
+    services_html+="</a>"
     
-    # Update the services list in the default page
-    sed -i "s|SERVICES_LIST|${services_html}|g" "${nginx_conf_file}"
+    # Update the HTML file with the services list
+    local html_file="./nginx/index.html"
+    sed -i "s|SERVICES_LIST|${services_html}|g" "${html_file}"
     
     echo "Nginx configuration generated at ${nginx_conf_file} based on running services"
 }
@@ -746,7 +814,7 @@ SERVICE_CMDS[zigbee2mqtt]="podman run -d --name zigbee2mqtt --restart unless-sto
 SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --network ${NETWORK_NAME} --privileged -e TZ=${TZ} -p ${FRIGATE_PORT}:5000/tcp -p 1935:1935 -v ${FRIGATE_RECORDINGS_HOST_PATH}:/media/frigate:rw -v ./frigate_config.yml:/config/config.yml:ro -v /etc/localtime:/etc/localtime:ro --shm-size 256m ghcr.io/blakeblackshear/frigate:stable"
 SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
 SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -e DOCKER_HOST=unix:///var/run/docker.sock -v nodered_data:/data -v ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro --security-opt label=disable --user root docker.io/nodered/node-red:latest"
-SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
+SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v ${PWD}/nginx/index.html:/usr/share/nginx/html/index.html:ro -v ${PWD}/nginx/style.css:/usr/share/nginx/html/style.css:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
 SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
 
