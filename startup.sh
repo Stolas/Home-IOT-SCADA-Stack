@@ -1216,9 +1216,11 @@ nuke_system() {
     echo ""
     echo "[2/3] Removing all volumes..."
     for vol in "${VOLUME_LIST[@]}"; do
-        if podman volume exists "${vol}" 2>/dev/null; then
+        if podman volume ls --format '{{.Name}}' | grep -q "^${vol}$"; then
             echo "Removing volume: ${vol}"
-            podman volume rm "${vol}" 2>/dev/null || echo "WARNING: Could not remove volume ${vol}"
+            if ! podman volume rm "${vol}" 2>&1; then
+                echo "WARNING: Could not remove volume ${vol}"
+            fi
         else
             echo "Volume ${vol} does not exist. Skipping."
         fi
