@@ -159,6 +159,33 @@ This stops and removes all active containers and unmounts the SMB share. Persist
 ./startup.sh breakdown
 ```
 
+**Nuke (Complete Data Removal) - DESTRUCTIVE**
+
+⚠️ **WARNING: This is a destructive operation that CANNOT be undone!**
+
+The `nuke` option completely removes all containers AND all persistent volumes, effectively resetting the stack to a clean state. This will permanently delete:
+
+* All container data
+* All volumes (mosquitto_data, frigate_data, nodered_data, z2m_data, grafana_data, influxdb_data, nginx_cache, doubletake_data)
+* All stored configurations
+* All recordings (Frigate)
+* All time-series data (InfluxDB)
+* All Grafana dashboards and settings
+* All Node-RED flows
+
+The script will prompt for confirmation (you must type `YES` in all caps) before proceeding.
+
+```bash
+./startup.sh nuke
+```
+
+Use this option when you want to:
+* Start completely fresh with new data
+* Remove all data before decommissioning the system
+* Troubleshoot issues by resetting to factory defaults
+
+After running `nuke`, you can start fresh by running `./startup.sh` again.
+
 **Start a Single Service**
 
 To troubleshoot or manually start a specific service:
