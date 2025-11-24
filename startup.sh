@@ -276,6 +276,10 @@ NGINX_EOF
     # Copy template and update the HTML file with the services list
     local html_template="./nginx/index.html.template"
     local html_file="./nginx/index.html"
+    if [ ! -f "${html_template}" ]; then
+        echo "ERROR: HTML template file not found at ${html_template}"
+        return 1
+    fi
     cp "${html_template}" "${html_file}"
     sed -i "s|SERVICES_LIST|${services_html}|g" "${html_file}"
     
@@ -521,6 +525,10 @@ NGINX_EOF
     # Copy template and update the HTML file with the services list
     local html_template="./nginx/index.html.template"
     local html_file="./nginx/index.html"
+    if [ ! -f "${html_template}" ]; then
+        echo "ERROR: HTML template file not found at ${html_template}"
+        return 1
+    fi
     cp "${html_template}" "${html_file}"
     sed -i "s|SERVICES_LIST|${services_html}|g" "${html_file}"
     
