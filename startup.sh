@@ -842,7 +842,8 @@ build_nodered_command() {
     local base_cmd="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root"
     
     # If podman socket is available, add socket mounting and DOCKER_HOST environment variable
-    if [ "$PODMAN_SOCKET_AVAILABLE" == "true" ] && [ -n "$DETECTED_PODMAN_SOCKET" ]; then
+    # Use strict validation to prevent empty or invalid socket paths from being used
+    if [ "$PODMAN_SOCKET_AVAILABLE" == "true" ] && [ -n "$DETECTED_PODMAN_SOCKET" ] && [ -e "$DETECTED_PODMAN_SOCKET" ]; then
         echo "  [INFO] Node-RED will start with Podman socket integration: ${DETECTED_PODMAN_SOCKET}" >&2
         base_cmd="${base_cmd} -e DOCKER_HOST=unix:///var/run/docker.sock -v ${DETECTED_PODMAN_SOCKET}:/var/run/docker.sock:ro"
     else
