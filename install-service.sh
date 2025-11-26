@@ -97,15 +97,23 @@ install_service() {
     
     # Enable lingering so service runs without active session
     print_info "Enabling user lingering to keep service running after logout..."
-    if loginctl enable-linger "${USER}" 2>/dev/null; then
-        print_success "User lingering enabled for ${USER}"
+    
+    # Check if lingering is already enabled
+    if loginctl show-user "${USER}" 2>/dev/null | grep -q "Linger=yes"; then
+        print_success "User lingering already enabled for ${USER}"
     else
-        print_info "Note: Lingering might require elevated privileges. Trying with sudo..."
-        if sudo loginctl enable-linger "${USER}"; then
-            print_success "User lingering enabled for ${USER} (with sudo)"
+        # Try to enable lingering without sudo first
+        if loginctl enable-linger "${USER}" 2>/dev/null; then
+            print_success "User lingering enabled for ${USER}"
         else
-            print_error "Failed to enable lingering. Service may stop when SSH session ends."
-            echo "         To fix this manually, run: sudo loginctl enable-linger ${USER}"
+            # If that fails, try with sudo
+            print_info "Note: Lingering requires elevated privileges. Trying with sudo..."
+            if sudo loginctl enable-linger "${USER}" 2>&1; then
+                print_success "User lingering enabled for ${USER} (with sudo)"
+            else
+                print_error "Failed to enable lingering. Service may stop when SSH session ends."
+                echo "         To fix this manually, run: sudo loginctl enable-linger ${USER}"
+            fi
         fi
     fi
     

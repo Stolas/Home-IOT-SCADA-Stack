@@ -384,6 +384,38 @@ Even without enabling anonymous access, Grafana offers several sharing options:
 
 For more information on Grafana security and sharing options, refer to the [official Grafana documentation](https://grafana.com/docs/grafana/latest/administration/security/).
 
+**Step-by-Step Example:**
+
+1. **Edit your secrets.env file:**
+   ```bash
+   nano secrets.env
+   ```
+
+2. **Find the Grafana public access section and modify it:**
+   ```bash
+   # Change from:
+   GRAFANA_ANONYMOUS_ENABLED=false
+   
+   # To:
+   GRAFANA_ANONYMOUS_ENABLED=true
+   ```
+
+3. **Save the file and restart Grafana:**
+   ```bash
+   ./startup.sh start grafana
+   ```
+
+4. **Test public access:**
+   - Open an incognito/private browser window
+   - Navigate to your Grafana URL (e.g., `http://grafana.home.local` or `http://<host_ip>:3000`)
+   - You should now be able to view dashboards without logging in
+   - To access admin features, click "Sign in" and use your admin credentials
+
+5. **Verify it's working:**
+   - Anonymous users will see dashboards but won't have edit permissions (if using Viewer role)
+   - The Grafana UI will show a "Sign in" button in the top right for anonymous users
+   - Admin users can still log in to create/edit dashboards
+
 ## Components and Access Points
 
 | Component | Purpose | Access URL (Default Ports) | Notes |
@@ -450,6 +482,27 @@ Checking which services are running and generating nginx configuration...
   [INFO] Zigbee2MQTT is not running - skipping from nginx config
 Starting nginx (reverse proxy) after all upstream services...
 ```
+
+* **Grafana Public Access Not Working:** If you've enabled anonymous access (`GRAFANA_ANONYMOUS_ENABLED=true`) but visitors are still prompted to log in:
+  1. Verify the variables are correctly set in `secrets.env`
+  2. Restart the Grafana container: `./startup.sh start grafana`
+  3. Check Grafana logs for errors: `podman logs grafana`
+  4. Ensure you're using the correct Grafana URL (via nginx proxy or direct port 3000)
+  5. Clear your browser cache and cookies for the Grafana site
+
+* **Systemd Service Issues:** If the systemd service isn't starting or containers stop after SSH logout:
+  1. Check service status: `./install-service.sh status`
+  2. View service logs: `./install-service.sh logs`
+  3. Verify user lingering is enabled: `loginctl show-user $USER | grep Linger=`
+  4. If lingering shows "Linger=no", enable it: `sudo loginctl enable-linger $USER`
+  5. Check podman socket is running: `systemctl --user status podman.socket`
+  6. Reload systemd if you manually edited the service file: `systemctl --user daemon-reload`
+
+* **Containers Stop When SSH Session Ends:** This happens when containers are started without proper persistence:
+  1. **Recommended solution:** Use the systemd service: `./install-service.sh install`
+  2. **Alternative:** Enable user lingering manually: `sudo loginctl enable-linger $USER`
+  3. **Verify:** Check lingering status: `loginctl show-user $USER | grep Linger=`
+  4. After enabling lingering, containers started with `--restart unless-stopped` will persist
 
 * **Port 80 Permission Error (Rootless Podman):** If you encounter a permission error when starting the nginx container (attempting to bind to port 80), this is because ports below 1024 are considered "privileged ports" and normally require root access. When running Podman in rootless mode (as a non-root user), you may see an error like:
 
