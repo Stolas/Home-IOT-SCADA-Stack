@@ -201,7 +201,7 @@ This stops and removes all active containers and unmounts the SMB share. Persist
 
 **Nuke (Complete Data Removal) - DESTRUCTIVE**
 
-⚠️ **WARNING: This is a destructive operation that CANNOT be undone!**
+**WARNING: This is a destructive operation that CANNOT be undone!**
 
 The `nuke` option completely removes all containers AND all persistent volumes, effectively resetting the stack to a clean state. This will permanently delete:
 
@@ -362,7 +362,7 @@ After updating these settings, restart the Grafana container or the entire stack
 
 **Security Considerations:**
 
-⚠️ **Important:** Enabling public access means anyone who can reach your Grafana instance can view your dashboards without authentication.
+**Important:** Enabling public access means anyone who can reach your Grafana instance can view your dashboards without authentication.
 
 * **Recommended for:** Home networks, isolated networks, or trusted environments
 * **Not recommended for:** Internet-facing deployments or untrusted networks

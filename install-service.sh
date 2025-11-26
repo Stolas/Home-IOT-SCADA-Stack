@@ -32,7 +32,7 @@ print_header() {
 }
 
 print_success() {
-    echo "[✓] $1"
+    echo "[OK] $1"
 }
 
 print_info() {
@@ -40,7 +40,7 @@ print_info() {
 }
 
 print_error() {
-    echo "[✗] ERROR: $1" >&2
+    echo "[FAIL] ERROR: $1" >&2
 }
 
 # --- Check Prerequisites ---
