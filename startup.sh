@@ -158,6 +158,9 @@ INFLUXDB_ADMIN_TOKEN=$(read_var INFLUXDB_ADMIN_TOKEN)
 GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER)
 GRAFANA_ADMIN_PASSWORD=$(read_var GRAFANA_ADMIN_PASSWORD)
 GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
+GRAFANA_ANONYMOUS_ENABLED=$(read_var GRAFANA_ANONYMOUS_ENABLED)
+GRAFANA_ANONYMOUS_ORG_NAME=$(read_var GRAFANA_ANONYMOUS_ORG_NAME)
+GRAFANA_ANONYMOUS_ORG_ROLE=$(read_var GRAFANA_ANONYMOUS_ORG_ROLE)
 MQTT_USER=$(read_var MQTT_USER)
 MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
 TZ=$(read_var TZ)
@@ -800,6 +803,9 @@ check_first_run() {
             GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER)
             GRAFANA_ADMIN_PASSWORD=$(read_var GRAFANA_ADMIN_PASSWORD)
             GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
+            GRAFANA_ANONYMOUS_ENABLED=$(read_var GRAFANA_ANONYMOUS_ENABLED)
+            GRAFANA_ANONYMOUS_ORG_NAME=$(read_var GRAFANA_ANONYMOUS_ORG_NAME)
+            GRAFANA_ANONYMOUS_ORG_ROLE=$(read_var GRAFANA_ANONYMOUS_ORG_ROLE)
             MQTT_USER=$(read_var MQTT_USER)
             MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
             TZ=$(read_var TZ)
@@ -944,7 +950,8 @@ SERVICE_CMDS[mosquitto]="podman run -d --name mosquitto --restart unless-stopped
 SERVICE_CMDS[influxdb]="podman run -d --name influxdb --restart unless-stopped --network ${NETWORK_NAME} -p 8086:8086 -v influxdb_data:/var/lib/influxdb2 -e DOCKER_INFLUXDB_INIT_MODE=setup -e DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_ADMIN_USER} -e DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD} -e DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG} -e DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET} -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_ADMIN_TOKEN} -e TZ=${TZ} docker.io/influxdb:2.7"
 SERVICE_CMDS[zigbee2mqtt]="podman run -d --name zigbee2mqtt --restart unless-stopped --network ${NETWORK_NAME} -p 8080:8080 -e MQTT_SERVER=mqtt://mosquitto -e MQTT_USER=${MQTT_USER} -e MQTT_PASSWORD=${MQTT_PASSWORD} -e TZ=${TZ} -v z2m_data:/app/data --device ${ZIGBEE_DEVICE_PATH}:/dev/zigbee --cap-add NET_ADMIN --cap-add SYS_ADMIN docker.io/koenkk/zigbee2mqtt:latest"
 SERVICE_CMDS[frigate]="podman run -d --name frigate --restart unless-stopped --network ${NETWORK_NAME} --privileged -e TZ=${TZ} -p ${FRIGATE_PORT}:5000/tcp -p 1935:1935 -v ${FRIGATE_RECORDINGS_HOST_PATH}:/media/frigate:rw -v ./frigate_config.yml:/config/config.yml:ro -v /etc/localtime:/etc/localtime:ro --shm-size 256m ghcr.io/blakeblackshear/frigate:stable"
-SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} docker.io/grafana/grafana:latest"
+# Grafana with public access support: GF_AUTH_ANONYMOUS_* environment variables enable dashboard viewing without authentication when configured
+SERVICE_CMDS[grafana]="podman run -d --name grafana --restart unless-stopped --network ${NETWORK_NAME} -p 3000:3000 -v grafana_data:/var/lib/grafana -e GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER} -e GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD} -e GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY} -e GF_AUTH_ANONYMOUS_ENABLED=${GRAFANA_ANONYMOUS_ENABLED} -e GF_AUTH_ANONYMOUS_ORG_NAME=${GRAFANA_ANONYMOUS_ORG_NAME} -e GF_AUTH_ANONYMOUS_ORG_ROLE=${GRAFANA_ANONYMOUS_ORG_ROLE} docker.io/grafana/grafana:latest"
 # Note: Node-RED command is built dynamically by build_nodered_command() based on socket availability
 SERVICE_CMDS[nodered]=""  # Will be populated dynamically during startup
 SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v ${PWD}/nginx:/usr/share/nginx/html:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
@@ -1172,6 +1179,28 @@ setup_system() {
     fi
     echo ""
     echo "To change your stack configuration, delete ${CONFIG_FILE} and run ./startup.sh again"
+    
+    # Check if the systemd service is installed and warn if not
+    SERVICE_NAME="iot-scada-stack"
+    SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
+    SERVICE_FILE="${SYSTEMD_USER_DIR}/${SERVICE_NAME}.service"
+    
+    if [ ! -f "${SERVICE_FILE}" ]; then
+        echo ""
+        echo "================================================================"
+        echo "                    IMPORTANT NOTICE                            "
+        echo "================================================================"
+        echo "The systemd service is NOT installed."
+        echo "Containers may stop when you disconnect from SSH!"
+        echo ""
+        echo "To ensure services persist after SSH logout, run:"
+        echo "  ./install-service.sh install"
+        echo ""
+        echo "This will:"
+        echo "  - Enable automatic startup on system boot"
+        echo "  - Keep containers running after SSH disconnection"
+        echo "================================================================"
+    fi
 }
 
 # --- Full Breakdown function: Containers and SMB share ---

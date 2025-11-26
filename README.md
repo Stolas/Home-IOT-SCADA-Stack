@@ -149,6 +149,46 @@ systemctl --user enable podman.socket
 systemctl --user start podman.socket
 ```
 
+**Running as a Systemd Service (Recommended for Persistent Operation):**
+
+For production deployments where you want the stack to automatically start on boot and persist even after SSH disconnection, you can install the stack as a systemd user service:
+
+```bash
+chmod +x install-service.sh
+./install-service.sh install
+```
+
+This will:
+* Install the stack as a systemd user service
+* Enable automatic startup on system boot
+* Enable user lingering so the service persists after SSH logout
+* Ensure containers continue running even when you disconnect
+
+**Service Management Commands:**
+
+```bash
+# Check service status
+./install-service.sh status
+# or
+systemctl --user status iot-scada-stack.service
+
+# View live logs
+./install-service.sh logs
+# or
+journalctl --user -u iot-scada-stack.service -f
+
+# Restart the service
+systemctl --user restart iot-scada-stack.service
+
+# Stop the service
+systemctl --user stop iot-scada-stack.service
+
+# Uninstall the service (containers remain manageable via startup.sh)
+./install-service.sh uninstall
+```
+
+**Note:** The systemd service approach is the **recommended method** for ensuring containers persist across SSH sessions and system reboots. Without it, containers started in an SSH session may be terminated when the session ends, depending on your system configuration.
+
 ### 5. Additional Operations
 
 **Breakdown (Stop and Remove Containers)**
@@ -161,7 +201,7 @@ This stops and removes all active containers and unmounts the SMB share. Persist
 
 **Nuke (Complete Data Removal) - DESTRUCTIVE**
 
-⚠️ **WARNING: This is a destructive operation that CANNOT be undone!**
+**WARNING: This is a destructive operation that CANNOT be undone!**
 
 The `nuke` option completely removes all containers AND all persistent volumes, effectively resetting the stack to a clean state. This will permanently delete:
 
@@ -290,6 +330,92 @@ podman ps | grep codesysgateway
 podman logs codesysgateway
 ```
 
+## Grafana Configuration
+
+### Public Dashboard Access
+
+By default, Grafana requires authentication to view dashboards. If you want to enable public (anonymous) access to dashboards without requiring login credentials, you can configure this in the `secrets.env` file.
+
+**Enable Public Access:**
+
+Edit the `secrets.env` file and set the following variables:
+
+```bash
+# Enable anonymous (public) access to dashboards
+GRAFANA_ANONYMOUS_ENABLED=true
+
+# Organization name for anonymous users (default: Main Org.)
+GRAFANA_ANONYMOUS_ORG_NAME=Main Org.
+
+# Role for anonymous users: Viewer, Editor, or Admin (default: Viewer)
+# RECOMMENDED: Keep as 'Viewer' to prevent unauthorized modifications
+GRAFANA_ANONYMOUS_ORG_ROLE=Viewer
+```
+
+After updating these settings, restart the Grafana container or the entire stack:
+
+```bash
+./startup.sh start grafana
+# or restart the entire stack
+./startup.sh
+```
+
+**Security Considerations:**
+
+**Important:** Enabling public access means anyone who can reach your Grafana instance can view your dashboards without authentication.
+
+* **Recommended for:** Home networks, isolated networks, or trusted environments
+* **Not recommended for:** Internet-facing deployments or untrusted networks
+* **Best practices:**
+  * Keep `GRAFANA_ANONYMOUS_ORG_ROLE` set to `Viewer` (read-only)
+  * Use network-level security (firewall, VPN) to restrict access
+  * Regularly review what data is exposed in your dashboards
+  * Consider using Grafana's built-in folder permissions for sensitive dashboards
+  * Monitor access logs for unexpected activity
+
+**Dashboard Sharing Options:**
+
+Even without enabling anonymous access, Grafana offers several sharing options:
+
+* **Snapshot sharing:** Create a static snapshot of a dashboard that can be shared via a link
+* **Dashboard export:** Export dashboards as JSON for sharing or backup
+* **Role-based access:** Create users with different permission levels (Viewer, Editor, Admin)
+* **Organization isolation:** Use multiple organizations within Grafana for different user groups
+
+For more information on Grafana security and sharing options, refer to the [official Grafana documentation](https://grafana.com/docs/grafana/latest/administration/security/).
+
+**Step-by-Step Example:**
+
+1. **Edit your secrets.env file:**
+   ```bash
+   nano secrets.env
+   ```
+
+2. **Find the Grafana public access section and modify it:**
+   ```bash
+   # Change from:
+   GRAFANA_ANONYMOUS_ENABLED=false
+   
+   # To:
+   GRAFANA_ANONYMOUS_ENABLED=true
+   ```
+
+3. **Save the file and restart Grafana:**
+   ```bash
+   ./startup.sh start grafana
+   ```
+
+4. **Test public access:**
+   - Open an incognito/private browser window
+   - Navigate to your Grafana URL (e.g., `http://grafana.home.local` or `http://<host_ip>:3000`)
+   - You should now be able to view dashboards without logging in
+   - To access admin features, click "Sign in" and use your admin credentials
+
+5. **Verify it's working:**
+   - Anonymous users will see dashboards but won't have edit permissions (if using Viewer role)
+   - The Grafana UI will show a "Sign in" button in the top right for anonymous users
+   - Admin users can still log in to create/edit dashboards
+
 ## Components and Access Points
 
 | Component | Purpose | Access URL (Default Ports) | Notes |
@@ -316,9 +442,11 @@ sudo systemctl enable --now cockpit.socket
 | File/Directory | Description |
 |----------------|-------------|
 | **startup.sh** | Main script for managing setup, breakdown, and service start. (Executable) |
+| **install-service.sh** | Helper script to install/uninstall the stack as a systemd user service for persistent operation. (Executable) |
+| **iot-scada-stack.service.template** | Systemd service template file used by install-service.sh. |
 | **create_secrets.sh** | Script to generate a secure secrets.env file from the example. (Executable) |
 | **.stack_config** | Stores your stack configuration choice (IoT only, NVR only, or both). Auto-generated on first run. |
-| **secrets.env-example** | Template file listing all necessary environment variables. |
+| **secrets.env-example** | Template file listing all necessary environment variables including Grafana public access settings. |
 | **secrets.env** | Your configuration file. Created by create_secrets.sh. (Keep this secret!) |
 | **frigate_config.yml** | Configuration file for the Frigate NVR container. |
 | **mosquitto/** | Directory for Mosquitto configuration files (e.g., mosquitto.conf). |
@@ -354,6 +482,27 @@ Checking which services are running and generating nginx configuration...
   [INFO] Zigbee2MQTT is not running - skipping from nginx config
 Starting nginx (reverse proxy) after all upstream services...
 ```
+
+* **Grafana Public Access Not Working:** If you've enabled anonymous access (`GRAFANA_ANONYMOUS_ENABLED=true`) but visitors are still prompted to log in:
+  1. Verify the variables are correctly set in `secrets.env`
+  2. Restart the Grafana container: `./startup.sh start grafana`
+  3. Check Grafana logs for errors: `podman logs grafana`
+  4. Ensure you're using the correct Grafana URL (via nginx proxy or direct port 3000)
+  5. Clear your browser cache and cookies for the Grafana site
+
+* **Systemd Service Issues:** If the systemd service isn't starting or containers stop after SSH logout:
+  1. Check service status: `./install-service.sh status`
+  2. View service logs: `./install-service.sh logs`
+  3. Verify user lingering is enabled: `loginctl show-user $USER | grep Linger=`
+  4. If lingering shows "Linger=no", enable it: `sudo loginctl enable-linger $USER`
+  5. Check podman socket is running: `systemctl --user status podman.socket`
+  6. Reload systemd if you manually edited the service file: `systemctl --user daemon-reload`
+
+* **Containers Stop When SSH Session Ends:** This happens when containers are started without proper persistence:
+  1. **Recommended solution:** Use the systemd service: `./install-service.sh install`
+  2. **Alternative:** Enable user lingering manually: `sudo loginctl enable-linger $USER`
+  3. **Verify:** Check lingering status: `loginctl show-user $USER | grep Linger=`
+  4. After enabling lingering, containers started with `--restart unless-stopped` will persist
 
 * **Port 80 Permission Error (Rootless Podman):** If you encounter a permission error when starting the nginx container (attempting to bind to port 80), this is because ports below 1024 are considered "privileged ports" and normally require root access. When running Podman in rootless mode (as a non-root user), you may see an error like:
 
