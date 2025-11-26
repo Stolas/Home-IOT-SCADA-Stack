@@ -1240,6 +1240,7 @@ nuke_system() {
 }
 
 
+podman system service 
 # --- Main Execution ---
 case "$1" in
     setup|"")
