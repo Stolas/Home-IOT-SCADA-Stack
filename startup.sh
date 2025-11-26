@@ -1179,6 +1179,28 @@ setup_system() {
     fi
     echo ""
     echo "To change your stack configuration, delete ${CONFIG_FILE} and run ./startup.sh again"
+    
+    # Check if the systemd service is installed and warn if not
+    SERVICE_NAME="iot-scada-stack"
+    SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"
+    SERVICE_FILE="${SYSTEMD_USER_DIR}/${SERVICE_NAME}.service"
+    
+    if [ ! -f "${SERVICE_FILE}" ]; then
+        echo ""
+        echo "================================================================"
+        echo "                    IMPORTANT NOTICE                            "
+        echo "================================================================"
+        echo "The systemd service is NOT installed."
+        echo "Containers may stop when you disconnect from SSH!"
+        echo ""
+        echo "To ensure services persist after SSH logout, run:"
+        echo "  ./install-service.sh install"
+        echo ""
+        echo "This will:"
+        echo "  - Enable automatic startup on system boot"
+        echo "  - Keep containers running after SSH disconnection"
+        echo "================================================================"
+    fi
 }
 
 # --- Full Breakdown function: Containers and SMB share ---
