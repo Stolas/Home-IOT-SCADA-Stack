@@ -1,0 +1,21 @@
+[Unit]
+Description=Home IoT SCADA Stack
+Documentation=https://github.com/Stolas/Home-IOT-SCADA-Stack
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=WORKING_DIRECTORY_PLACEHOLDER
+ExecStart=WORKING_DIRECTORY_PLACEHOLDER/startup.sh setup
+ExecStop=WORKING_DIRECTORY_PLACEHOLDER/startup.sh breakdown
+StandardOutput=journal
+StandardError=journal
+
+# Restart policy
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=default.target

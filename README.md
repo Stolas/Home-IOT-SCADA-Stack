@@ -149,6 +149,46 @@ systemctl --user enable podman.socket
 systemctl --user start podman.socket
 ```
 
+**Running as a Systemd Service (Recommended for Persistent Operation):**
+
+For production deployments where you want the stack to automatically start on boot and persist even after SSH disconnection, you can install the stack as a systemd user service:
+
+```bash
+chmod +x install-service.sh
+./install-service.sh install
+```
+
+This will:
+* Install the stack as a systemd user service
+* Enable automatic startup on system boot
+* Enable user lingering so the service persists after SSH logout
+* Ensure containers continue running even when you disconnect
+
+**Service Management Commands:**
+
+```bash
+# Check service status
+./install-service.sh status
+# or
+systemctl --user status iot-scada-stack.service
+
+# View live logs
+./install-service.sh logs
+# or
+journalctl --user -u iot-scada-stack.service -f
+
+# Restart the service
+systemctl --user restart iot-scada-stack.service
+
+# Stop the service
+systemctl --user stop iot-scada-stack.service
+
+# Uninstall the service (containers remain manageable via startup.sh)
+./install-service.sh uninstall
+```
+
+**Note:** The systemd service approach is the **recommended method** for ensuring containers persist across SSH sessions and system reboots. Without it, containers started in an SSH session may be terminated when the session ends, depending on your system configuration.
+
 ### 5. Additional Operations
 
 **Breakdown (Stop and Remove Containers)**
@@ -290,6 +330,60 @@ podman ps | grep codesysgateway
 podman logs codesysgateway
 ```
 
+## Grafana Configuration
+
+### Public Dashboard Access
+
+By default, Grafana requires authentication to view dashboards. If you want to enable public (anonymous) access to dashboards without requiring login credentials, you can configure this in the `secrets.env` file.
+
+**Enable Public Access:**
+
+Edit the `secrets.env` file and set the following variables:
+
+```bash
+# Enable anonymous (public) access to dashboards
+GRAFANA_ANONYMOUS_ENABLED=true
+
+# Organization name for anonymous users (default: Main Org.)
+GRAFANA_ANONYMOUS_ORG_NAME=Main Org.
+
+# Role for anonymous users: Viewer, Editor, or Admin (default: Viewer)
+# RECOMMENDED: Keep as 'Viewer' to prevent unauthorized modifications
+GRAFANA_ANONYMOUS_ORG_ROLE=Viewer
+```
+
+After updating these settings, restart the Grafana container or the entire stack:
+
+```bash
+./startup.sh start grafana
+# or restart the entire stack
+./startup.sh
+```
+
+**Security Considerations:**
+
+⚠️ **Important:** Enabling public access means anyone who can reach your Grafana instance can view your dashboards without authentication.
+
+* **Recommended for:** Home networks, isolated networks, or trusted environments
+* **Not recommended for:** Internet-facing deployments or untrusted networks
+* **Best practices:**
+  * Keep `GRAFANA_ANONYMOUS_ORG_ROLE` set to `Viewer` (read-only)
+  * Use network-level security (firewall, VPN) to restrict access
+  * Regularly review what data is exposed in your dashboards
+  * Consider using Grafana's built-in folder permissions for sensitive dashboards
+  * Monitor access logs for unexpected activity
+
+**Dashboard Sharing Options:**
+
+Even without enabling anonymous access, Grafana offers several sharing options:
+
+* **Snapshot sharing:** Create a static snapshot of a dashboard that can be shared via a link
+* **Dashboard export:** Export dashboards as JSON for sharing or backup
+* **Role-based access:** Create users with different permission levels (Viewer, Editor, Admin)
+* **Organization isolation:** Use multiple organizations within Grafana for different user groups
+
+For more information on Grafana security and sharing options, refer to the [official Grafana documentation](https://grafana.com/docs/grafana/latest/administration/security/).
+
 ## Components and Access Points
 
 | Component | Purpose | Access URL (Default Ports) | Notes |
@@ -316,9 +410,11 @@ sudo systemctl enable --now cockpit.socket
 | File/Directory | Description |
 |----------------|-------------|
 | **startup.sh** | Main script for managing setup, breakdown, and service start. (Executable) |
+| **install-service.sh** | Helper script to install/uninstall the stack as a systemd user service for persistent operation. (Executable) |
+| **iot-scada-stack.service.template** | Systemd service template file used by install-service.sh. |
 | **create_secrets.sh** | Script to generate a secure secrets.env file from the example. (Executable) |
 | **.stack_config** | Stores your stack configuration choice (IoT only, NVR only, or both). Auto-generated on first run. |
-| **secrets.env-example** | Template file listing all necessary environment variables. |
+| **secrets.env-example** | Template file listing all necessary environment variables including Grafana public access settings. |
 | **secrets.env** | Your configuration file. Created by create_secrets.sh. (Keep this secret!) |
 | **frigate_config.yml** | Configuration file for the Frigate NVR container. |
 | **mosquitto/** | Directory for Mosquitto configuration files (e.g., mosquitto.conf). |
