@@ -50,7 +50,7 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 * **Local Network Access:** All services communicate on the local network
 * **Port Availability:** Ensure the following ports are available:
-  * 514 (Syslog UDP/TCP for Node-RED) - for log ingestion from Mikrotik and other devices (Fixes #14)
+  * 514 (Syslog UDP/TCP for Node-RED) - for log ingestion from network devices (Fixes #14)
   * 1880 (Node-RED, configurable)
   * 1883 (Mosquitto MQTT)
   * 1984 (go2rtc Web UI) - for RTSP stream conversion (Fixes #15)
@@ -471,7 +471,7 @@ Node-RED can communicate with the Mosquitto MQTT broker on the internal network.
 
 ### Syslog Log Ingestion
 
-The stack exposes port 514 (UDP and TCP) for syslog log ingestion. This allows devices like Mikrotik routers and other network equipment to send logs to Node-RED.
+The stack exposes port 514 (UDP and TCP) for syslog log ingestion. This allows network devices (routers, switches, servers, etc.) to send logs to Node-RED for processing, aggregation, and visualization.
 
 **Installing node-red-contrib-syslog-input:**
 
@@ -488,25 +488,14 @@ The stack exposes port 514 (UDP and TCP) for syslog log ingestion. This allows d
    - **Protocol:** `UDP` or `TCP` (depending on your device configuration)
 3. Connect to processing nodes (function, debug, dashboard, etc.)
 
-**Example Syslog Flow for Mikrotik:**
+**Example Syslog Flow:**
 ```json
 [{"id":"syslog-in","type":"syslog-input","name":"Syslog Input","port":"514","protocol":"udp","wires":[["debug-node"]]},{"id":"debug-node","type":"debug","name":"Debug","active":true,"tosidebar":true,"console":false,"tostatus":false,"complete":"payload","targetType":"msg","statusVal":"","statusType":"auto"}]
 ```
 
-**Configuring Mikrotik for Syslog:**
+**Configuring Network Devices:**
 
-On your Mikrotik router, configure remote logging:
-```
-/system logging action
-add name=syslog remote=<host_ip> remote-port=514 target=remote
-
-/system logging
-add action=syslog topics=info
-add action=syslog topics=warning
-add action=syslog topics=error
-```
-
-Replace `<host_ip>` with the IP address of your Home-IOT-SCADA-Stack host.
+Configure your network devices to send syslog messages to the Home-IOT-SCADA-Stack host IP address on port 514. Refer to your device's documentation for specific syslog configuration instructions.
 
 ## go2rtc and Camera Streams in Grafana (Fixes #15)
 
