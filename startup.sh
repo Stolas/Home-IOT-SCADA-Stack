@@ -29,6 +29,8 @@ VOLUME_LIST=(
     "influxdb_data"
     "nginx_cache"
     "doubletake_data"
+    "compreface_data"
+    "go2rtc_data"
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
@@ -171,6 +173,9 @@ NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
 ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
 COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
 DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
+COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME)
+COMPREFACE_API_KEY=$(read_var COMPREFACE_API_KEY)
+GO2RTC_HOSTNAME=$(read_var GO2RTC_HOSTNAME)
 
 
 # ----------------------------------------------------------------------
@@ -575,6 +580,65 @@ NGINX_EOF
         echo "  [INFO] Double-Take is not running - skipping from nginx config"
     fi
     
+    # Check and add CompreFace if running (Fixes #5)
+    if echo "$running_services" | grep -q "^compreface$"; then
+        echo "  [ok] CompreFace is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # CompreFace (Face Recognition API for Double-Take)
+    server {
+        listen 80;
+        server_name ${COMPREFACE_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://compreface:8000;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
+    }
+NGINX_EOF
+        services_html+="<a href=\"http://${COMPREFACE_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>CompreFace</h3>"
+        services_html+="<p>Face recognition API for Double-Take</p>"
+        services_html+="<span class=\"service-url\">${COMPREFACE_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
+    else
+        echo "  [INFO] CompreFace is not running - skipping from nginx config"
+    fi
+    
+    # Check and add go2rtc if running (Fixes #15)
+    if echo "$running_services" | grep -q "^go2rtc$"; then
+        echo "  [ok] go2rtc is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # go2rtc (RTSP to WebRTC/HLS converter for Grafana dashboards)
+    server {
+        listen 80;
+        server_name ${GO2RTC_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://go2rtc:1984;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+NGINX_EOF
+        services_html+="<a href=\"http://${GO2RTC_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>go2rtc</h3>"
+        services_html+="<p>RTSP stream converter for Grafana dashboards</p>"
+        services_html+="<span class=\"service-url\">${GO2RTC_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
+    else
+        echo "  [INFO] go2rtc is not running - skipping from nginx config"
+    fi
+    
     # Check and add InfluxDB if running
     if echo "$running_services" | grep -q "^influxdb$"; then
         echo "  [ok] InfluxDB is running (available on port 8086)"
@@ -816,6 +880,9 @@ check_first_run() {
             ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
             COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
             DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
+            COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME)
+            COMPREFACE_API_KEY=$(read_var COMPREFACE_API_KEY)
+            GO2RTC_HOSTNAME=$(read_var GO2RTC_HOSTNAME)
         fi
     fi
 }
@@ -874,7 +941,7 @@ mount_smb_share() {
 # --- Breakdown function: Stop and Remove all containers (KEEP volumes) ---
 breakdown_containers_only() {
     echo "Stopping and removing containers..."
-    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake")
+    CONTAINER_NAMES=("mosquitto" "zigbee2mqtt" "frigate" "influxdb" "grafana" "nodered" "nginx" "doubletake" "compreface" "go2rtc")
     
     for name in "${CONTAINER_NAMES[@]}"; do
         if podman ps -a --format '{{.Names}}' | grep -q "^${name}$"; then
@@ -926,8 +993,10 @@ run_service() {
 # Decision path:
 #   1. If socket detected and available -> mount it for full Docker/Podman integration
 #   2. If socket missing or not usable -> start Node-RED without socket (limited functionality but no crash)
+# Port 514 is exposed for syslog ingestion (Fixes #14)
+# Ports 1884/8884 are exposed for direct MQTT connections to Node-RED (different from Mosquitto's 1883/8883)
 build_nodered_command() {
-    local base_cmd="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root"
+    local base_cmd="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -p 1884:1883/tcp -p 8884:8883/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root"
     
     # If podman socket is available, add socket mounting and DOCKER_HOST environment variable
     # Use strict validation to prevent empty or invalid socket paths from being used
@@ -957,7 +1026,11 @@ SERVICE_CMDS[nodered]=""  # Will be populated dynamically during startup
 SERVICE_CMDS[nginx]="podman run -d --name nginx --restart unless-stopped --network ${NETWORK_NAME} --add-host=host.containers.internal:host-gateway -p 80:80 --security-opt label=disable -v ${PWD}/nginx/nginx.conf:/etc/nginx/nginx.conf:ro -v ${PWD}/nginx:/usr/share/nginx/html:ro -v nginx_cache:/var/cache/nginx docker.io/library/nginx:alpine"
 
 SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopped --network ${NETWORK_NAME} -p 3001:3000 -v doubletake_data:/.storage -e TZ=${TZ} docker.io/jakowenko/double-take:latest"
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake)
+# CompreFace for facial recognition with Double-Take (Fixes #5)
+SERVICE_CMDS[compreface]="podman run -d --name compreface --restart unless-stopped --network ${NETWORK_NAME} -p 8000:8000 -v compreface_data:/root/.cache -e API_KEY=${COMPREFACE_API_KEY} -e TZ=${TZ} docker.io/exadel/compreface:latest"
+# go2rtc for RTSP stream conversion to WebRTC/HLS for Grafana dashboards (Fixes #15)
+SERVICE_CMDS[go2rtc]="podman run -d --name go2rtc --restart unless-stopped --network ${NETWORK_NAME} -p 1984:1984 -p 8554:8554 -p 8555:8555/tcp -p 8555:8555/udp -v go2rtc_data:/config -e TZ=${TZ} ghcr.io/alexxit/go2rtc:latest"
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake compreface go2rtc)
 
 # --- Manual Start Function ---
 start_manual_service() {
@@ -979,7 +1052,14 @@ start_manual_service() {
             exit 1
         fi
         
-        if [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$stack_type" == "nvr_only" ]; then
+        if [ "$SERVICE_NAME" == "compreface" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "ERROR: CompreFace is not enabled in your configuration (IoT/SCADA only mode)."
+            echo "To enable CompreFace, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
+            exit 1
+        fi
+        
+        # go2rtc is available for ALL stack types (Fixes #15) - no restriction needed
+        if [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$SERVICE_NAME" != "compreface" ] && [ "$SERVICE_NAME" != "go2rtc" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "ERROR: ${SERVICE_NAME} is not enabled in your configuration (NVR only mode)."
             echo "To enable IoT/SCADA services, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
             exit 1
@@ -996,7 +1076,7 @@ start_manual_service() {
             # Fallback: If command building somehow failed, use a minimal safe command
             if [ -z "${SERVICE_CMDS[nodered]}" ]; then
                 echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
-                SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+                SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -p 1884:1883/tcp -p 8884:8883/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
             fi
         fi
         
@@ -1035,7 +1115,7 @@ setup_system() {
     # Fallback: If command building somehow failed, use a minimal safe command
     if [ -z "${SERVICE_CMDS[nodered]}" ]; then
         echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
-        SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+        SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -p 1884:1883/tcp -p 8884:8883/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
     fi
     
     # Get the stack configuration
@@ -1089,8 +1169,15 @@ setup_system() {
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
         fi
-        # Skip IoT services if stack type is nvr_only (but keep frigate and doubletake)
-        if [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$stack_type" == "nvr_only" ]; then
+        # Skip CompreFace if stack type is iot_only (Fixes #5)
+        if [ "$SERVICE" == "compreface" ] && [ "$stack_type" == "iot_only" ]; then
+            echo "Skipping CompreFace (NVR not enabled in configuration)"
+            SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
+            continue
+        fi
+        # go2rtc is available for ALL stack types (Fixes #15) - no skip needed
+        # Skip IoT services if stack type is nvr_only (but keep frigate, doubletake, compreface, and go2rtc)
+        if [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$SERVICE" != "compreface" ] && [ "$SERVICE" != "go2rtc" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "Skipping $SERVICE (IoT/SCADA not enabled in configuration)"
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
