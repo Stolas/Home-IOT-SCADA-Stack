@@ -1029,6 +1029,7 @@ SERVICE_CMDS[doubletake]="podman run -d --name doubletake --restart unless-stopp
 # CompreFace for facial recognition with Double-Take (Fixes #5)
 SERVICE_CMDS[compreface]="podman run -d --name compreface --restart unless-stopped --network ${NETWORK_NAME} -p 8000:8000 -v compreface_data:/root/.cache -e API_KEY=${COMPREFACE_API_KEY} -e TZ=${TZ} docker.io/exadel/compreface:latest"
 # go2rtc for RTSP stream conversion to WebRTC/HLS for Grafana dashboards (Fixes #15)
+# Port 8555 uses both TCP and UDP as required by WebRTC protocol for STUN/TURN connectivity
 SERVICE_CMDS[go2rtc]="podman run -d --name go2rtc --restart unless-stopped --network ${NETWORK_NAME} -p 1984:1984 -p 8554:8554 -p 8555:8555/tcp -p 8555:8555/udp -v go2rtc_data:/config -e TZ=${TZ} ghcr.io/alexxit/go2rtc:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake compreface go2rtc)
 
