@@ -48,10 +48,37 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 
 # --- Helper function to read variables from the secrets file ---
+# Usage: read_var VAR_NAME [DEFAULT_VALUE]
+# If DEFAULT_VALUE is provided and variable is empty/missing, returns the default
 read_var() {
+    local var_name="$1"
+    local default_value="$2"
+    local value
     # The grep command handles the reading, removing potential leading/trailing spaces
-    grep "^${1}=" "${ENV_FILE}" | cut -d'=' -f2- | tr -d '[:space:]'
+    value=$(grep "^${var_name}=" "${ENV_FILE}" 2>/dev/null | cut -d'=' -f2- | tr -d '[:space:]')
+    
+    if [ -z "$value" ] && [ -n "$default_value" ]; then
+        echo "$default_value"
+    else
+        echo "$value"
+    fi
 }
+
+# --- Helper function to require a variable (abort if missing) ---
+# Usage: require_var VAR_NAME VAR_VALUE DESCRIPTION
+# Aborts execution if the variable is empty or missing
+require_var() {
+    local var_name="$1"
+    local var_value="$2"
+    local description="$3"
+    
+    if [ -z "$var_value" ]; then
+        MISSING_VARS+=("${var_name} - ${description}")
+    fi
+}
+
+# Array to track missing required variables
+declare -a MISSING_VARS=()
 
 # ----------------------------------------------------------------------
 # --- PODMAN SOCKET DETECTION AND VALIDATION ---
@@ -142,8 +169,9 @@ detect_podman_socket() {
 }
 
 # --- Read variables for services and SMB mount ---
-FRIGATE_PORT=$(read_var FRIGATE_PORT)
-NODERED_PORT=$(read_var NODERED_PORT)
+# Variables with defaults (non-sensitive configuration)
+FRIGATE_PORT=$(read_var FRIGATE_PORT "5000")
+NODERED_PORT=$(read_var NODERED_PORT "1880")
 FRIGATE_RECORDINGS_HOST_PATH=$(read_var FRIGATE_RECORDINGS_HOST_PATH)
 SMB_SERVER=$(read_var SMB_SERVER)
 SMB_SHARE=$(read_var SMB_SHARE)
@@ -152,30 +180,59 @@ SMB_PASS=$(read_var SMB_PASS)
 ZIGBEE_DEVICE_PATH=$(read_var ZIGBEE_DEVICE_PATH)
 PODMAN_SOCKET_PATH=$(read_var PODMAN_SOCKET_PATH)
 CURRENT_UID=$(id -u) 
-INFLUXDB_ADMIN_USER=$(read_var INFLUXDB_ADMIN_USER)
+INFLUXDB_ADMIN_USER=$(read_var INFLUXDB_ADMIN_USER "influx_admin")
 INFLUXDB_ADMIN_PASSWORD=$(read_var INFLUXDB_ADMIN_PASSWORD)
-INFLUXDB_ORG=$(read_var INFLUXDB_ORG)
-INFLUXDB_BUCKET=$(read_var INFLUXDB_BUCKET)
+INFLUXDB_ORG=$(read_var INFLUXDB_ORG "home_org")
+INFLUXDB_BUCKET=$(read_var INFLUXDB_BUCKET "iot_scada_data")
 INFLUXDB_ADMIN_TOKEN=$(read_var INFLUXDB_ADMIN_TOKEN)
-GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER)
+GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER "admin")
 GRAFANA_ADMIN_PASSWORD=$(read_var GRAFANA_ADMIN_PASSWORD)
 GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
-GRAFANA_ANONYMOUS_ENABLED=$(read_var GRAFANA_ANONYMOUS_ENABLED)
-GRAFANA_ANONYMOUS_ORG_NAME=$(read_var GRAFANA_ANONYMOUS_ORG_NAME)
-GRAFANA_ANONYMOUS_ORG_ROLE=$(read_var GRAFANA_ANONYMOUS_ORG_ROLE)
-MQTT_USER=$(read_var MQTT_USER)
+GRAFANA_ANONYMOUS_ENABLED=$(read_var GRAFANA_ANONYMOUS_ENABLED "false")
+GRAFANA_ANONYMOUS_ORG_NAME=$(read_var GRAFANA_ANONYMOUS_ORG_NAME "Main Org.")
+GRAFANA_ANONYMOUS_ORG_ROLE=$(read_var GRAFANA_ANONYMOUS_ORG_ROLE "Viewer")
+MQTT_USER=$(read_var MQTT_USER "mqtt_user")
 MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
-TZ=$(read_var TZ)
-BASE_DOMAIN=$(read_var BASE_DOMAIN)
-GRAFANA_HOSTNAME=$(read_var GRAFANA_HOSTNAME)
-FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME)
-NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
-ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
-COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
-DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
-COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME)
+TZ=$(read_var TZ "UTC")
+BASE_DOMAIN=$(read_var BASE_DOMAIN "home.local")
+GRAFANA_HOSTNAME=$(read_var GRAFANA_HOSTNAME "grafana")
+FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME "frigate")
+NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME "nodered")
+ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME "zigbee")
+COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME "cockpit")
+DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME "doubletake")
+COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME "compreface")
 COMPREFACE_API_KEY=$(read_var COMPREFACE_API_KEY)
-GO2RTC_HOSTNAME=$(read_var GO2RTC_HOSTNAME)
+GO2RTC_HOSTNAME=$(read_var GO2RTC_HOSTNAME "go2rtc")
+
+# --- Validate required variables (passwords/secrets) ---
+# These are critical secrets that must be set - abort if missing
+require_var "MQTT_PASSWORD" "$MQTT_PASSWORD" "MQTT broker password"
+require_var "INFLUXDB_ADMIN_PASSWORD" "$INFLUXDB_ADMIN_PASSWORD" "InfluxDB admin password"
+require_var "INFLUXDB_ADMIN_TOKEN" "$INFLUXDB_ADMIN_TOKEN" "InfluxDB API token"
+require_var "GRAFANA_ADMIN_PASSWORD" "$GRAFANA_ADMIN_PASSWORD" "Grafana admin password"
+require_var "GRAFANA_SECRET_KEY" "$GRAFANA_SECRET_KEY" "Grafana secret key for sessions"
+
+# Check if any required variables are missing and abort if so
+if [ ${#MISSING_VARS[@]} -gt 0 ]; then
+    echo ""
+    echo "================================================================"
+    echo "              MISSING REQUIRED CONFIGURATION                    "
+    echo "================================================================"
+    echo ""
+    echo "ERROR: The following required variables are missing from ${ENV_FILE}:"
+    echo ""
+    for var in "${MISSING_VARS[@]}"; do
+        echo "  - $var"
+    done
+    echo ""
+    echo "These are security-critical settings that must be configured."
+    echo "Please edit ${ENV_FILE} and set all required values."
+    echo ""
+    echo "TIP: Run './create_secrets.sh' to auto-generate secure passwords."
+    echo "================================================================"
+    exit 1
+fi
 
 
 # ----------------------------------------------------------------------
@@ -847,10 +904,10 @@ check_first_run() {
         # First run - do configuration
         first_run_configuration
         
-        # Re-read variables after secrets are generated
+        # Re-read variables after secrets are generated (with defaults for non-sensitive values)
         if [ -f "$ENV_FILE" ]; then
-            FRIGATE_PORT=$(read_var FRIGATE_PORT)
-            NODERED_PORT=$(read_var NODERED_PORT)
+            FRIGATE_PORT=$(read_var FRIGATE_PORT "5000")
+            NODERED_PORT=$(read_var NODERED_PORT "1880")
             FRIGATE_RECORDINGS_HOST_PATH=$(read_var FRIGATE_RECORDINGS_HOST_PATH)
             SMB_SERVER=$(read_var SMB_SERVER)
             SMB_SHARE=$(read_var SMB_SHARE)
@@ -859,30 +916,30 @@ check_first_run() {
             ZIGBEE_DEVICE_PATH=$(read_var ZIGBEE_DEVICE_PATH)
             PODMAN_SOCKET_PATH=$(read_var PODMAN_SOCKET_PATH)
             CURRENT_UID=$(id -u) 
-            INFLUXDB_ADMIN_USER=$(read_var INFLUXDB_ADMIN_USER)
+            INFLUXDB_ADMIN_USER=$(read_var INFLUXDB_ADMIN_USER "influx_admin")
             INFLUXDB_ADMIN_PASSWORD=$(read_var INFLUXDB_ADMIN_PASSWORD)
-            INFLUXDB_ORG=$(read_var INFLUXDB_ORG)
-            INFLUXDB_BUCKET=$(read_var INFLUXDB_BUCKET)
+            INFLUXDB_ORG=$(read_var INFLUXDB_ORG "home_org")
+            INFLUXDB_BUCKET=$(read_var INFLUXDB_BUCKET "iot_scada_data")
             INFLUXDB_ADMIN_TOKEN=$(read_var INFLUXDB_ADMIN_TOKEN)
-            GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER)
+            GRAFANA_ADMIN_USER=$(read_var GRAFANA_ADMIN_USER "admin")
             GRAFANA_ADMIN_PASSWORD=$(read_var GRAFANA_ADMIN_PASSWORD)
             GRAFANA_SECRET_KEY=$(read_var GRAFANA_SECRET_KEY)
-            GRAFANA_ANONYMOUS_ENABLED=$(read_var GRAFANA_ANONYMOUS_ENABLED)
-            GRAFANA_ANONYMOUS_ORG_NAME=$(read_var GRAFANA_ANONYMOUS_ORG_NAME)
-            GRAFANA_ANONYMOUS_ORG_ROLE=$(read_var GRAFANA_ANONYMOUS_ORG_ROLE)
-            MQTT_USER=$(read_var MQTT_USER)
+            GRAFANA_ANONYMOUS_ENABLED=$(read_var GRAFANA_ANONYMOUS_ENABLED "false")
+            GRAFANA_ANONYMOUS_ORG_NAME=$(read_var GRAFANA_ANONYMOUS_ORG_NAME "Main Org.")
+            GRAFANA_ANONYMOUS_ORG_ROLE=$(read_var GRAFANA_ANONYMOUS_ORG_ROLE "Viewer")
+            MQTT_USER=$(read_var MQTT_USER "mqtt_user")
             MQTT_PASSWORD=$(read_var MQTT_PASSWORD)
-            TZ=$(read_var TZ)
-            BASE_DOMAIN=$(read_var BASE_DOMAIN)
-            GRAFANA_HOSTNAME=$(read_var GRAFANA_HOSTNAME)
-            FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME)
-            NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME)
-            ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME)
-            COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME)
-            DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME)
-            COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME)
+            TZ=$(read_var TZ "UTC")
+            BASE_DOMAIN=$(read_var BASE_DOMAIN "home.local")
+            GRAFANA_HOSTNAME=$(read_var GRAFANA_HOSTNAME "grafana")
+            FRIGATE_HOSTNAME=$(read_var FRIGATE_HOSTNAME "frigate")
+            NODERED_HOSTNAME=$(read_var NODERED_HOSTNAME "nodered")
+            ZIGBEE2MQTT_HOSTNAME=$(read_var ZIGBEE2MQTT_HOSTNAME "zigbee")
+            COCKPIT_HOSTNAME=$(read_var COCKPIT_HOSTNAME "cockpit")
+            DOUBLETAKE_HOSTNAME=$(read_var DOUBLETAKE_HOSTNAME "doubletake")
+            COMPREFACE_HOSTNAME=$(read_var COMPREFACE_HOSTNAME "compreface")
             COMPREFACE_API_KEY=$(read_var COMPREFACE_API_KEY)
-            GO2RTC_HOSTNAME=$(read_var GO2RTC_HOSTNAME)
+            GO2RTC_HOSTNAME=$(read_var GO2RTC_HOSTNAME "go2rtc")
         fi
     fi
 }
