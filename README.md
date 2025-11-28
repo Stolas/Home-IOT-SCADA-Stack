@@ -53,7 +53,6 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
   * 514 (Syslog UDP/TCP for Node-RED) - for log ingestion from Mikrotik and other devices (Fixes #14)
   * 1880 (Node-RED, configurable)
   * 1883 (Mosquitto MQTT)
-  * 1884 (Node-RED MQTT listener - standard) - for direct MQTT connections to Node-RED (Fixes #14)
   * 1984 (go2rtc Web UI) - for RTSP stream conversion (Fixes #15)
   * 3000 (Grafana)
   * 3001 (Double-Take) - only if NVR is enabled
@@ -63,8 +62,6 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
   * 8086 (InfluxDB)
   * 8554 (go2rtc RTSP server) - for re-streaming camera feeds (Fixes #15)
   * 8555 (go2rtc WebRTC server) - for low-latency browser playback (Fixes #15)
-  * 8883 (Mosquitto MQTT TLS) - optional secure MQTT
-  * 8884 (Node-RED MQTT TLS listener) - for secure direct MQTT connections to Node-RED (Fixes #14)
 
 ## Getting Started
 
@@ -471,25 +468,6 @@ Node-RED can communicate with the Mosquitto MQTT broker on the internal network.
 ```json
 [{"id":"mqtt-broker","type":"mqtt-broker","name":"Mosquitto","broker":"mosquitto","port":"1883","clientid":"","autoConnect":true,"usetls":false,"protocolVersion":"4","keepalive":"60","cleansession":true}]
 ```
-
-### Direct MQTT Connections to Node-RED
-
-Node-RED also exposes MQTT ports for direct connections from external devices:
-
-* **Port 1884:** Standard MQTT connections to Node-RED (mapped to internal port 1883)
-* **Port 8884:** TLS-encrypted MQTT connections to Node-RED (mapped to internal port 8883)
-
-This allows devices to send MQTT messages directly to Node-RED without going through Mosquitto, useful for:
-- Devices that need custom MQTT processing in Node-RED
-- Testing and debugging MQTT flows
-- Direct device-to-Node-RED communication
-
-**Note:** These ports (1884/8884) are different from Mosquitto's ports (1883/8883) to avoid conflicts.
-
-To use direct MQTT in Node-RED:
-1. Install `node-red-contrib-aedes` from the palette manager for MQTT broker functionality
-2. Configure the aedes broker node to listen on port 1883 (internal)
-3. External devices connect to `<host_ip>:1884` for standard MQTT or `<host_ip>:8884` for TLS
 
 ### Syslog Log Ingestion
 

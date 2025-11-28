@@ -994,9 +994,9 @@ run_service() {
 #   1. If socket detected and available -> mount it for full Docker/Podman integration
 #   2. If socket missing or not usable -> start Node-RED without socket (limited functionality but no crash)
 # Port 514 is exposed for syslog ingestion (Fixes #14)
-# Ports 1884/8884 are exposed for direct MQTT connections to Node-RED (different from Mosquitto's 1883/8883)
+# Node-RED connects to Mosquitto via the internal container network for MQTT
 build_nodered_command() {
-    local base_cmd="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -p 1884:1883/tcp -p 8884:8883/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root"
+    local base_cmd="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root"
     
     # If podman socket is available, add socket mounting and DOCKER_HOST environment variable
     # Use strict validation to prevent empty or invalid socket paths from being used
@@ -1077,7 +1077,7 @@ start_manual_service() {
             # Fallback: If command building somehow failed, use a minimal safe command
             if [ -z "${SERVICE_CMDS[nodered]}" ]; then
                 echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
-                SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -p 1884:1883/tcp -p 8884:8883/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+                SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
             fi
         fi
         
@@ -1116,7 +1116,7 @@ setup_system() {
     # Fallback: If command building somehow failed, use a minimal safe command
     if [ -z "${SERVICE_CMDS[nodered]}" ]; then
         echo "WARNING: Failed to build Node-RED command dynamically. Using fallback command without socket."
-        SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -p 1884:1883/tcp -p 8884:8883/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
+        SERVICE_CMDS[nodered]="podman run -d --name nodered --restart unless-stopped --network ${NETWORK_NAME} -p ${NODERED_PORT}:1880 -p 514:514/udp -p 514:514/tcp -e TZ=${TZ} -v nodered_data:/data --security-opt label=disable --user root docker.io/nodered/node-red:latest"
     fi
     
     # Get the stack configuration
