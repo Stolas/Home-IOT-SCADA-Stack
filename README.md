@@ -2,6 +2,16 @@
 
 A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE Leap Micro host.
 
+> **📚 For detailed architecture documentation, component descriptions, and deployment guidance, see [ARCHITECTURE.md](ARCHITECTURE.md)**
+
+## Deployment Methods
+
+This stack can be deployed using either:
+- **Podman Compose** (Recommended) - Uses the included `compose.yml` file for declarative container management
+- **Raw Podman Commands** - Uses the `startup.sh` script with individual `podman run` commands
+
+The `compose.yml` file provides a modern, maintainable approach to managing the entire stack with a single command: `podman-compose up -d`.
+
 ## Credits
 
 This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The remaining 1% was me being lazy and asking them to do all the work.
