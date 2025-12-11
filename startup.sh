@@ -1124,7 +1124,7 @@ SERVICE_CMDS[go2rtc]="podman run -d --name go2rtc --restart unless-stopped --net
 # FUXA for HMI/SCADA visual interface
 SERVICE_CMDS[fuxa]="podman run -d --name fuxa --restart unless-stopped --network ${NETWORK_NAME} -p 1881:1881 -v fuxa_data:/usr/src/app/FUXA/server/_appdata -e TZ=${TZ} docker.io/frangoteam/fuxa:latest"
 # Telegraf for metrics collection and syslog aggregation
-SERVICE_CMDS[telegraf]="podman run -d --name telegraf --restart unless-stopped --network ${NETWORK_NAME} -p 514:514/udp -e INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN} -e INFLUX_ORG=${INFLUXDB_ORG} -e INFLUX_BUCKET=${INFLUXDB_BUCKET} -e TZ=${TZ} -v ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z docker.io/telegraf:latest"
+SERVICE_CMDS[telegraf]="podman run -d --name telegraf --restart unless-stopped --network ${NETWORK_NAME} -p 514:514/udp -e INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN} -e INFLUX_ORG=${INFLUXDB_ORG} -e INFLUX_BUCKET=${INFLUXDB_BUCKET} -e TZ=${TZ} -v ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z docker.io/telegraf:latest"
 SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake compreface go2rtc fuxa telegraf)
 
 # --- Manual Start Function ---
