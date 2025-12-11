@@ -2,7 +2,7 @@
 
 A comprehensive guide to the architecture, components, and deployment of the Home IOT SCADA Stack.
 
-## 1. 🚀 Project Overview: The SCADA Stack
+## 1. Project Overview: The SCADA Stack
 
 ### Goal
 
@@ -24,17 +24,17 @@ By combining best-in-class tools, the stack achieves flexibility, maintainabilit
 
 ### Deployment
 
-The entire stack is deployed using **Podman containers** managed by a single `compose.yml` file. This approach:
+The entire stack is deployed using **Podman containers** managed by the `startup.sh` shell script. This approach:
 
-- **Simplifies Setup**: Define all services, networks, and volumes in one declarative file
-- **Ensures Reproducibility**: Identical deployments across different hosts
-- **Facilitates Updates**: Manage all container versions centrally
+- **Automated Management**: Single script handles container lifecycle, network creation, and volume management
+- **Resilient Operation**: Script continues even if individual services fail, providing complete status reporting
+- **Flexibility**: Easy to enable/disable services based on your needs (IoT/SCADA only, NVR only, or both)
 - **Supports Rootless Mode**: Enhanced security with rootless Podman execution
-- **SELinux Friendly**: Properly configured volume mounts with `:Z` labels for SELinux contexts
+- **SELinux Friendly**: Properly configured volume mounts and security contexts
 
-Use `podman-compose up -d` to start the entire stack with a single command.
+Use `./startup.sh` to start the entire stack. The script will guide you through initial configuration on first run.
 
-## 2. 🌐 System Architecture & Component Roles
+## 2. System Architecture & Component Roles
 
 The SCADA stack is organized into functional layers. Each component serves a specific role and communicates with others through well-defined interfaces.
 
@@ -58,7 +58,7 @@ The SCADA stack is organized into functional layers. Each component serves a spe
 | **Face Detection** | Double-Take | `doubletake` | Analyzes Frigate events for facial recognition using CompreFace. Identifies known faces in camera feeds. | Frigate MQTT events, CompreFace API |
 | **RTSP Converter** | go2rtc | `go2rtc` | Converts RTSP camera streams to WebRTC/HLS for low-latency browser playback in Grafana and other dashboards. | RTSP streams, WebRTC/HLS output on ports 1984, 8554, 8555 |
 
-## 3. ➕ New Component Setup Instructions (Telegraf)
+## 3. New Component Setup Instructions (Telegraf)
 
 Telegraf is a powerful metrics collection agent that aggregates data from various sources and forwards it to InfluxDB. This section covers setting up Telegraf for syslog collection from network devices (routers, switches, firewalls, etc.).
 
@@ -171,25 +171,19 @@ INFLUXDB_BUCKET=iot_scada_data
 
 ### Volume Mount Configuration
 
-Mount the `telegraf.conf` file into the container at the expected path. In your `compose.yml`:
+Mount the `telegraf.conf` file into the container at the expected path using the `-v` flag in the `podman run` command:
 
-```yaml
-services:
-  telegraf:
-    image: docker.io/telegraf:latest
-    container_name: telegraf
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "514:514/udp"  # Syslog listener
-    environment:
-      - INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN}
-      - INFLUX_ORG=${INFLUXDB_ORG}
-      - INFLUX_BUCKET=${INFLUXDB_BUCKET}
-    volumes:
-      # Mount telegraf.conf with SELinux label :Z for Podman/SELinux compatibility
-      - ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z
+```bash
+podman run -d \
+  --name telegraf \
+  --restart unless-stopped \
+  --network iot_net \
+  -p 514:514/udp \
+  -e INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN} \
+  -e INFLUX_ORG=${INFLUXDB_ORG} \
+  -e INFLUX_BUCKET=${INFLUXDB_BUCKET} \
+  -v ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z \
+  docker.io/telegraf:latest
 ```
 
 **Important Notes on SELinux and Volume Mounts:**
@@ -230,289 +224,123 @@ After starting the stack:
    influx query 'from(bucket:"iot_scada_data") |> range(start: -1h) |> filter(fn: (r) => r._measurement == "syslog")'
    ```
 
-## 4. 🗂️ Podman Compose File Update (Instructions)
+## 4. Deployment with startup.sh
 
-The `compose.yml` file defines all services, networks, and volumes for the SCADA stack. This section provides guidance on ensuring your compose file includes all necessary components.
+The SCADA stack is deployed using the `startup.sh` shell script, which provides automated management of all Podman containers, networks, and volumes.
 
-### Required Services
+### Using startup.sh
 
-Confirm your `compose.yml` includes the following services:
+The startup script provides several commands for managing the stack:
 
-1. **mosquitto** - MQTT broker
-2. **influxdb** - Time-series database
-3. **grafana** - Visualization dashboards
-4. **fuxa** - HMI/SCADA interface
-5. **node-red** - Automation logic
-6. **frigate** - Video surveillance (NVR)
-7. **compreface** - Face recognition API
-8. **telegraf** - Metrics collection agent
-
-### Essential Configuration Elements
-
-#### Networks
-
-Create a custom bridge network for service communication:
-
-```yaml
-networks:
-  iot_stack_net:
-    driver: bridge
-```
-
-All services should connect to this network. Services can reference each other by container name as hostname (e.g., `http://influxdb:8086`).
-
-#### Volumes
-
-Named volumes for persistent data:
-
-```yaml
-volumes:
-  mosquitto_data:
-  influxdb_data:
-  grafana_data:
-  fuxa_data:
-  node-red_data:
-  frigate_data:
-  compreface_data:
-  telegraf_data:
-```
-
-#### Port Mappings
-
-Essential ports to expose:
-
-- Mosquitto: `1883` (MQTT)
-- InfluxDB: `8086` (HTTP API)
-- Grafana: `3000` (Web UI)
-- FUXA: `1881` (Web UI)
-- Node-RED: `1880` (Web UI), `514` (Syslog UDP/TCP)
-- Frigate: `5000` (Web UI), `8554` (RTSP)
-- CompreFace: `8000` (API)
-- Telegraf: `514/udp` (Syslog listener)
-
-### Example compose.yml Snippet
-
-Below is a complete example `compose.yml` suitable for Podman Compose. This includes all primary services with minimal necessary configuration:
-
-```yaml
-version: '3.8'
-
-services:
-  # MQTT Broker
-  mosquitto:
-    image: docker.io/eclipse-mosquitto:latest
-    container_name: mosquitto
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-    volumes:
-      - mosquitto_data:/mosquitto/data
-      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-
-  # Time-Series Database
-  influxdb:
-    image: docker.io/influxdb:2.7
-    container_name: influxdb
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "8086:8086"
-    environment:
-      - DOCKER_INFLUXDB_INIT_MODE=setup
-      - DOCKER_INFLUXDB_INIT_USERNAME=${INFLUXDB_ADMIN_USER}
-      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUXDB_ADMIN_PASSWORD}
-      - DOCKER_INFLUXDB_INIT_ORG=${INFLUXDB_ORG}
-      - DOCKER_INFLUXDB_INIT_BUCKET=${INFLUXDB_BUCKET}
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_ADMIN_TOKEN}
-      - TZ=${TZ}
-    volumes:
-      - influxdb_data:/var/lib/influxdb2
-
-  # Visualization Dashboards
-  grafana:
-    image: docker.io/grafana/grafana:latest
-    container_name: grafana
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
-      - GF_SECURITY_SECRET_KEY=${GRAFANA_SECRET_KEY}
-      - GF_AUTH_ANONYMOUS_ENABLED=${GRAFANA_ANONYMOUS_ENABLED:-false}
-      - GF_AUTH_ANONYMOUS_ORG_NAME=${GRAFANA_ANONYMOUS_ORG_NAME:-Main Org.}
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=${GRAFANA_ANONYMOUS_ORG_ROLE:-Viewer}
-      - TZ=${TZ}
-    volumes:
-      - grafana_data:/var/lib/grafana
-
-  # HMI/SCADA Interface
-  fuxa:
-    image: docker.io/frangoteam/fuxa:latest
-    container_name: fuxa
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "1881:1881"
-    environment:
-      - TZ=${TZ}
-    volumes:
-      - fuxa_data:/usr/src/app/FUXA/server/_appdata
-
-  # Automation Logic
-  node-red:
-    image: docker.io/nodered/node-red:latest
-    container_name: node-red
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "1880:1880"
-      - "514:514/udp"
-      - "514:514/tcp"
-    environment:
-      - TZ=${TZ}
-    volumes:
-      - node-red_data:/data
-    # For Podman socket access (optional, for Docker nodes in Node-RED)
-    # Uncomment if using Node-RED with Docker/Podman integration
-    # - ${PODMAN_SOCKET_PATH}:/var/run/docker.sock:ro
-
-  # Video Surveillance (NVR)
-  frigate:
-    image: ghcr.io/blakeblackshear/frigate:stable
-    container_name: frigate
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    privileged: true
-    ports:
-      - "5000:5000"
-      - "8554:8554"  # RTSP
-      - "1935:1935"  # RTMP
-    environment:
-      - TZ=${TZ}
-    volumes:
-      - frigate_data:/media/frigate
-      - ./frigate_config.yml:/config/config.yml:ro
-      - /etc/localtime:/etc/localtime:ro
-    shm_size: '256m'
-
-  # Face Recognition API
-  compreface:
-    image: docker.io/exadel/compreface:latest
-    container_name: compreface
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "8000:8000"
-    environment:
-      - API_KEY=${COMPREFACE_API_KEY}
-      - TZ=${TZ}
-    volumes:
-      - compreface_data:/root/.cache
-
-  # Metrics Collection Agent
-  telegraf:
-    image: docker.io/telegraf:latest
-    container_name: telegraf
-    restart: unless-stopped
-    networks:
-      - iot_stack_net
-    ports:
-      - "514:514/udp"  # Syslog listener
-    environment:
-      - INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN}
-      - INFLUX_ORG=${INFLUXDB_ORG}
-      - INFLUX_BUCKET=${INFLUXDB_BUCKET}
-    volumes:
-      - ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z
-
-networks:
-  iot_stack_net:
-    driver: bridge
-
-volumes:
-  mosquitto_data:
-  influxdb_data:
-  grafana_data:
-  fuxa_data:
-  node-red_data:
-  frigate_data:
-  compreface_data:
-  telegraf_data:
-```
-
-### Environment Variables and Secrets
-
-**Do NOT hardcode credentials in compose.yml.** Use environment variable substitution with a `secrets.env` file:
-
+**Start the stack (default):**
 ```bash
-# Load secrets.env before running podman-compose
-export $(cat secrets.env | xargs)
-podman-compose up -d
+./startup.sh
+# or
+./startup.sh setup
 ```
 
-Or use `podman-compose --env-file secrets.env up -d` if supported.
-
-### Podman Compose Commands
-
-**Start the stack:**
+**Start a specific service:**
 ```bash
-podman-compose up -d
+./startup.sh start <service_name>
 ```
 
-**Stop the stack:**
+**Stop and remove all containers (keeps volumes):**
 ```bash
-podman-compose down
+./startup.sh breakdown
 ```
 
-**View logs:**
+**Complete cleanup (removes volumes - DESTRUCTIVE):**
 ```bash
-podman-compose logs -f
-podman-compose logs -f telegraf  # Specific service
+./startup.sh nuke
 ```
 
-**Rebuild after config changes:**
-```bash
-podman-compose down
-podman-compose up -d
-```
+### First-Run Configuration
 
-### Creating the Network (Optional)
+On first run, the startup script will:
 
-If you prefer to create the network manually before starting the stack:
+1. Prompt you to select deployment mode:
+   - IoT/SCADA Stack only
+   - NVR only
+   - Both IoT/SCADA Stack + NVR
 
-```bash
-podman network create iot_stack_net
-```
+2. Automatically generate secure passwords/tokens in `secrets.env`
 
-Podman Compose will use the existing network if it already exists.
+3. Guide you through required manual configuration:
+   - `ZIGBEE_DEVICE_PATH` - Path to your Zigbee adapter
+   - `PODMAN_SOCKET_PATH` - Optional, for Node-RED Docker integration
+   - `TZ` - Timezone setting
+   - Network and hostname configuration for Nginx reverse proxy
+
+### Adding Telegraf to the Stack
+
+To add Telegraf to your existing deployment, you'll need to integrate it into the `startup.sh` script. Here's how to add the Telegraf service:
+
+1. **Create the Telegraf configuration directory:**
+   ```bash
+   mkdir -p docker/telegraf
+   ```
+
+2. **Add the telegraf.conf file** using the configuration from Section 3.
+
+3. **Add Telegraf service definition** to `startup.sh`:
+
+   Find the section where services are defined (around line 1087) and add:
+   
+   ```bash
+   SERVICE_CMDS[telegraf]="podman run -d --name telegraf --restart unless-stopped --network ${NETWORK_NAME} -p 514:514/udp -e INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN} -e INFLUX_ORG=${INFLUXDB_ORG} -e INFLUX_BUCKET=${INFLUXDB_BUCKET} -e TZ=${TZ} -v ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z docker.io/telegraf:latest"
+   ```
+
+4. **Add Telegraf to the service list** in the appropriate deployment mode.
+
+### Port Mappings
+
+The following ports are exposed by default:
+
+- **Mosquitto**: `1883` (MQTT), `9001` (WebSocket)
+- **InfluxDB**: `8086` (HTTP API)
+- **Grafana**: `3000` (Web UI)
+- **FUXA**: `1881` (Web UI) - *if added to stack*
+- **Node-RED**: `1880` (Web UI), `514` (Syslog UDP/TCP)
+- **Frigate**: `5000` (Web UI), `8554` (RTSP), `1935` (RTMP)
+- **CompreFace**: `8000` (API)
+- **Telegraf**: `514/udp` (Syslog listener) - *Note: conflicts with Node-RED if both enabled*
+
+### Network Configuration
+
+The startup script creates a custom Podman network (`iot_net` by default) for service-to-service communication. All containers join this network and can reference each other by container name:
+
+- `http://influxdb:8086` - InfluxDB API
+- `mqtt://mosquitto:1883` - MQTT broker
+- `http://grafana:3000` - Grafana
+- `http://fuxa:1881` - FUXA
+
+### Volume Management
+
+Persistent data is stored in named Podman volumes:
+
+- `mosquitto_data` - MQTT broker data
+- `influxdb_data` - Time-series database
+- `grafana_data` - Grafana dashboards and config
+- `nodered_data` - Node-RED flows
+- `z2m_data` - Zigbee2MQTT data
+- `frigate_data` - NVR recordings
+- `compreface_data` - Face recognition models
+- `doubletake_data` - Face detection data
+- `go2rtc_data` - RTSP converter config
+
+The `breakdown` command preserves these volumes. Only the `nuke` command removes them.
 
 ### SELinux Considerations
 
 When running on SELinux-enabled systems (like openSUSE Leap Micro):
 
-1. **Volume Mounts**: Use `:Z` or `:z` labels on volume mounts to set appropriate SELinux contexts.
-   - `:Z`: Private mount (single container)
-   - `:z`: Shared mount (multiple containers)
+1. **Volume Mounts**: Use `:Z` or `:z` labels on volume mounts:
+   - `:Z` - Private mount (single container)
+   - `:z` - Shared mount (multiple containers)
 
-2. **Example**:
-   ```yaml
-   volumes:
-     - ./docker/telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z
-     - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:z
-   ```
+2. **Security Options**: Some services use `--security-opt label=disable` for compatibility
 
-3. **Privileged Containers**: Some containers (like Frigate) require `privileged: true` for hardware access. Use sparingly and only when necessary.
+3. **Privileged Mode**: Frigate requires `--privileged` for hardware access (GPU, Coral TPU)
 
 ### Verifying Service Communication
 
@@ -526,28 +354,44 @@ podman exec telegraf ping -c 3 influxdb
 podman exec node-red ping -c 3 mosquitto
 
 # Check network connectivity
-podman network inspect iot_stack_net
+podman network inspect iot_net
 ```
 
-All services on the `iot_stack_net` network can reference each other by container name.
+### Systemd Service Integration
+
+For production deployments, install the stack as a systemd user service:
+
+```bash
+./install-service.sh install
+```
+
+This ensures:
+- Automatic startup on system boot
+- Service persistence after SSH logout
+- User lingering enabled
+
+Manage the service with:
+```bash
+systemctl --user status iot-scada-stack.service
+systemctl --user restart iot-scada-stack.service
+journalctl --user -u iot-scada-stack.service -f
+```
 
 ---
 
 ## Next Steps
 
-1. **Review and Update** your existing `compose.yml` to include all services listed above.
-2. **Create** the `docker/telegraf/telegraf.conf` file with the configuration provided in Section 3.
-3. **Update** your `secrets.env` file to include any new environment variables (Telegraf-related variables should already exist if you have InfluxDB configured).
-4. **Test** the stack:
+1. **Configure** the `docker/telegraf/telegraf.conf` file with the configuration from Section 3
+2. **Update** your `secrets.env` file to include Telegraf-related environment variables (if not already present)
+3. **Run** the startup script to deploy the stack:
    ```bash
-   podman-compose up -d
-   podman-compose logs -f
+   ./startup.sh
    ```
-5. **Configure** each service via its web UI:
+4. **Access** each service via its web UI:
    - FUXA: http://localhost:1881
    - Grafana: http://localhost:3000
    - Node-RED: http://localhost:1880
    - Frigate: http://localhost:5000
    - CompreFace: http://localhost:8000
 
-For troubleshooting and additional configuration details, refer to the official documentation for each component.
+For troubleshooting and additional configuration details, refer to the official documentation for each component and the README.md file in this repository.
