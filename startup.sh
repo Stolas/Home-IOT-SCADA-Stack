@@ -1154,8 +1154,7 @@ start_manual_service() {
         fi
         
         # go2rtc is available for ALL stack types (Fixes #15) - no restriction needed
-        # Mosquitto and InfluxDB are core infrastructure services needed by both IoT and NVR components
-        if [ "$SERVICE_NAME" != "mosquitto" ] && [ "$SERVICE_NAME" != "influxdb" ] && [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$SERVICE_NAME" != "compreface" ] && [ "$SERVICE_NAME" != "go2rtc" ] && [ "$stack_type" == "nvr_only" ]; then
+        if [ "$SERVICE_NAME" != "frigate" ] && [ "$SERVICE_NAME" != "doubletake" ] && [ "$SERVICE_NAME" != "compreface" ] && [ "$SERVICE_NAME" != "go2rtc" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "ERROR: ${SERVICE_NAME} is not enabled in your configuration (NVR only mode)."
             echo "To enable IoT/SCADA services, delete ${CONFIG_FILE} and run ./startup.sh to reconfigure."
             exit 1
@@ -1272,9 +1271,8 @@ setup_system() {
             continue
         fi
         # go2rtc is available for ALL stack types (Fixes #15) - no skip needed
-        # Skip IoT services if stack type is nvr_only (but keep mosquitto, influxdb, frigate, doubletake, compreface, and go2rtc)
-        # Mosquitto and InfluxDB are core infrastructure services needed by both IoT and NVR components
-        if [ "$SERVICE" != "mosquitto" ] && [ "$SERVICE" != "influxdb" ] && [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$SERVICE" != "compreface" ] && [ "$SERVICE" != "go2rtc" ] && [ "$stack_type" == "nvr_only" ]; then
+        # Skip IoT services if stack type is nvr_only (but keep frigate, doubletake, compreface, and go2rtc)
+        if [ "$SERVICE" != "frigate" ] && [ "$SERVICE" != "doubletake" ] && [ "$SERVICE" != "compreface" ] && [ "$SERVICE" != "go2rtc" ] && [ "$stack_type" == "nvr_only" ]; then
             echo "Skipping $SERVICE (IoT/SCADA not enabled in configuration)"
             SERVICE_STATUS["${SERVICE}"]="SKIPPED (Not configured)"
             continue
