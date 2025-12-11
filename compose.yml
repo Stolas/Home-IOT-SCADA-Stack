@@ -126,7 +126,7 @@ services:
       # NOTE: Node-RED syslog ports commented out due to conflict with Telegraf
       # Uncomment below if you want Node-RED to receive syslog (and disable Telegraf's 514 port)
       # - "1514:514/udp"   # Syslog listener (UDP) - mapped to host port 1514 to avoid conflict
-      # - "1514:514/tcp"   # Syslog listener (TCP) - mapped to host port 1514 to avoid conflict
+      # - "1515:514/tcp"   # Syslog listener (TCP) - mapped to host port 1515 to avoid conflict
     environment:
       - TZ=${TZ:-UTC}
     volumes:

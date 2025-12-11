@@ -96,7 +96,7 @@ Create the configuration file at `docker/telegraf/telegraf.conf`:
 # Output to InfluxDB v2.x
 [[outputs.influxdb_v2]]
   ## The URLs of the InfluxDB cluster nodes.
-  ## Use the service name from docker-compose for internal DNS resolution
+  ## Use the service name from compose.yml for internal DNS resolution
   urls = ["http://influxdb:8086"]
   
   ## Token for authentication.
