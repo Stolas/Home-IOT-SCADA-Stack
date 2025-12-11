@@ -31,6 +31,8 @@ VOLUME_LIST=(
     "doubletake_data"
     "compreface_data"
     "go2rtc_data"
+    "fuxa_data"
+    "telegraf_data"
 )
 # Array to track the startup status of each service
 declare -A SERVICE_STATUS
@@ -696,6 +698,37 @@ NGINX_EOF
         echo "  [INFO] go2rtc is not running - skipping from nginx config"
     fi
     
+    # Check and add FUXA if running
+    if echo "$running_services" | grep -q "^fuxa$"; then
+        echo "  [ok] FUXA is running - adding to nginx config"
+        cat >> "${nginx_conf_file}" << NGINX_EOF
+    
+    # FUXA (HMI/SCADA Interface)
+    server {
+        listen 80;
+        server_name ${FUXA_HOSTNAME}.${BASE_DOMAIN};
+        
+        location / {
+            proxy_pass http://fuxa:1881;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection "upgrade";
+        }
+    }
+NGINX_EOF
+        services_html+="<a href=\"http://${FUXA_HOSTNAME}.${BASE_DOMAIN}\" class=\"service-card\">"
+        services_html+="<h3>FUXA</h3>"
+        services_html+="<p>Web-based HMI/SCADA visual interface</p>"
+        services_html+="<span class=\"service-url\">${FUXA_HOSTNAME}.${BASE_DOMAIN}</span>"
+        services_html+="</a>"
+    else
+        echo "  [INFO] FUXA is not running - skipping from nginx config"
+    fi
+    
     # Check and add InfluxDB if running
     if echo "$running_services" | grep -q "^influxdb$"; then
         echo "  [ok] InfluxDB is running (available on port 8086)"
@@ -1088,7 +1121,11 @@ SERVICE_CMDS[compreface]="podman run -d --name compreface --restart unless-stopp
 # go2rtc for RTSP stream conversion to WebRTC/HLS for Grafana dashboards (Fixes #15)
 # Port 8555 uses both TCP and UDP as required by WebRTC protocol for STUN/TURN connectivity
 SERVICE_CMDS[go2rtc]="podman run -d --name go2rtc --restart unless-stopped --network ${NETWORK_NAME} -p 1984:1984 -p 8554:8554 -p 8555:8555/tcp -p 8555:8555/udp -v go2rtc_data:/config -e TZ=${TZ} ghcr.io/alexxit/go2rtc:latest"
-SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake compreface go2rtc)
+# FUXA for HMI/SCADA visual interface
+SERVICE_CMDS[fuxa]="podman run -d --name fuxa --restart unless-stopped --network ${NETWORK_NAME} -p 1881:1881 -v fuxa_data:/usr/src/app/FUXA/server/_appdata -e TZ=${TZ} docker.io/frangoteam/fuxa:latest"
+# Telegraf for metrics collection and syslog aggregation
+SERVICE_CMDS[telegraf]="podman run -d --name telegraf --restart unless-stopped --network ${NETWORK_NAME} -p 514:514/udp -e INFLUX_TOKEN=${INFLUXDB_ADMIN_TOKEN} -e INFLUX_ORG=${INFLUXDB_ORG} -e INFLUX_BUCKET=${INFLUXDB_BUCKET} -e TZ=${TZ} -v ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:Z docker.io/telegraf:latest"
+SERVICE_NAMES=(mosquitto influxdb zigbee2mqtt frigate grafana nodered nginx doubletake compreface go2rtc fuxa telegraf)
 
 # --- Manual Start Function ---
 start_manual_service() {
