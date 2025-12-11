@@ -2,8 +2,6 @@
 
 A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE Leap Micro host.
 
-> **For detailed architecture documentation, component descriptions, and deployment guidance, see [ARCHITECTURE.md](ARCHITECTURE.md)**
-
 ## Credits
 
 This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The remaining 1% was me being lazy and asking them to do all the work.
@@ -12,12 +10,35 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 * **Host OS:** Optimized for **openSUSE Leap Micro** (or other transactional OS) for enhanced stability and rollback capability.
 * **Container Runtime:** Uses **Podman** for managing containers, networks, and persistent volumes.
-* **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **Automation** (Node-RED), **NVR** (Frigate with Double-Take facial recognition), and **Zigbee Gateway** (Zigbee2MQTT).
+* **Core Components:** Integrates **MQTT Broker** (Mosquitto), **Time Series Database** (InfluxDB), **Visualization** (Grafana), **HMI/SCADA** (FUXA), **Automation** (Node-RED), **Metrics Collection** (Telegraf), **NVR** (Frigate with Double-Take facial recognition), and **Zigbee Gateway** (Zigbee2MQTT).
 * **Reverse Proxy:** Nginx-based reverse proxy with hostname-based routing for all services, including openSUSE Cockpit web console. Nginx configuration is dynamically generated based on running services to prevent startup failures.
 * **Security:** Uses `create_secrets.sh` to generate unique, random, 64-character passwords/tokens for sensitive environment variables.
 * **External Storage:** Includes logic to mount an **SMB/CIFS** share for Frigate recordings on the host machine.
 * **Resilience:** The `startup.sh` script continues running even if individual service starts fail, providing a complete status report. Nginx automatically adapts to only proxy running services.
 * **Automatic Podman Socket Detection:** Node-RED automatically detects and uses the podman socket for docker/container integration. If the socket is unavailable, Node-RED starts in standalone mode without crashing.
+
+## Stack Components
+
+### Core Services
+
+* **FUXA** - Web-based HMI/SCADA interface providing visual, floorplan-based control panels for IoT devices. Accessible on port 1881.
+* **Telegraf** - Metrics collection agent that aggregates system metrics and syslog data from network devices (port 514/udp), forwarding to InfluxDB for storage and analysis.
+* **Mosquitto** - Lightweight MQTT broker for publish/subscribe messaging between IoT devices.
+* **InfluxDB** - High-performance time-series database optimized for sensor data and metrics.
+* **Grafana** - Advanced data visualization and monitoring dashboards with alerting capabilities.
+* **Node-RED** - Visual flow-based programming tool for automation logic and event processing.
+* **Zigbee2MQTT** - Bridge for Zigbee devices to communicate via MQTT (requires USB Zigbee adapter).
+
+### NVR Services (Optional)
+
+* **Frigate** - Network Video Recorder with real-time AI object detection for camera feeds.
+* **CompreFace** - AI-powered facial recognition API for identifying people in video frames.
+* **Double-Take** - Facial recognition integration that analyzes Frigate events using CompreFace.
+* **go2rtc** - RTSP stream converter for low-latency camera viewing in Grafana and browsers.
+
+### Infrastructure Services
+
+* **Nginx** - Reverse proxy with dynamic hostname-based routing for all web services.
 
 ## System Requirements
 
@@ -52,8 +73,9 @@ This project was 99% developed by AI assistants (Gemini and GitHub Copilot). The
 
 * **Local Network Access:** All services communicate on the local network
 * **Port Availability:** Ensure the following ports are available:
-  * 514 (Syslog UDP/TCP for Node-RED) - for log ingestion from network devices (Fixes #14)
+  * 514 (Syslog UDP for Telegraf) - for log ingestion from network devices
   * 1880 (Node-RED, configurable)
+  * 1881 (FUXA HMI/SCADA)
   * 1883 (Mosquitto MQTT)
   * 1984 (go2rtc Web UI) - for RTSP stream conversion (Fixes #15)
   * 3000 (Grafana)
@@ -98,7 +120,7 @@ chmod +x startup.sh
 
 The script will ask you to choose between:
 
-1. **IoT/SCADA Stack only** - Includes: Mosquitto (MQTT Broker), InfluxDB (Time Series Database), Grafana (Visualization), Node-RED (Automation), and Zigbee2MQTT (Zigbee Gateway)
+1. **IoT/SCADA Stack only** - Includes: Mosquitto (MQTT Broker), InfluxDB (Time Series Database), Grafana (Visualization), FUXA (HMI/SCADA), Node-RED (Automation), Telegraf (Metrics Collection), and Zigbee2MQTT (Zigbee Gateway)
 
 2. **NVR only** - Includes: Frigate (Network Video Recorder for camera management and object detection) and Double-Take (facial recognition)
 
