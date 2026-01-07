@@ -1,3 +1,7 @@
+oh lol fully replaced this with Ansible.
+
+
+
 # Home IoT SCADA Stack for openSUSE Leap Micro
 
 A comprehensive, containerized Home IoT SCADA (Supervisory Control and Data Acquisition) Stack built with Podman for resiliency and security on an openSUSE Leap Micro host.
